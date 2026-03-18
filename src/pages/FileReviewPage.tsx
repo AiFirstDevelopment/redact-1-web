@@ -10,6 +10,7 @@ export function FileReviewPage() {
   const navigate = useNavigate();
   const { detections, manualRedactions, isLoading, fetchDetections, detectFaces, updateDetection } = useDetectionStore();
   const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [, setScale] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -42,6 +43,7 @@ export function FileReviewPage() {
 
   const loadImage = async (fileId: string) => {
     try {
+      setImageError(null);
       const blob = await api.getFileOriginal(fileId);
       const url = URL.createObjectURL(blob);
       const img = new window.Image();
@@ -49,9 +51,13 @@ export function FileReviewPage() {
         setImage(img);
         calculateDimensions(img);
       };
+      img.onerror = () => {
+        setImageError('Failed to decode image');
+      };
       img.src = url;
     } catch (e) {
       console.error('Failed to load image:', e);
+      setImageError(e instanceof Error ? e.message : 'Failed to load image');
     }
   };
 
@@ -153,7 +159,12 @@ export function FileReviewPage() {
           ref={containerRef}
           className="flex-1 bg-gray-800 flex items-center justify-center p-6 overflow-auto"
         >
-          {image ? (
+          {imageError ? (
+            <div className="text-red-400 text-center">
+              <p className="mb-2">Error loading image</p>
+              <p className="text-sm text-gray-500">{imageError}</p>
+            </div>
+          ) : image ? (
             <div className="bg-white shadow-2xl">
               <Stage
                 width={dimensions.width}

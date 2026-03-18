@@ -1,14 +1,17 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
 export function EnrollmentPage() {
   const [departmentCode, setDepartmentCode] = useState('');
   const { enroll, isLoading, error, clearError } = useAuthStore();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await enroll(departmentCode);
+      navigate('/login');
     } catch {
       // Error is handled by store
     }

@@ -3,7 +3,7 @@ import { api } from '../services/api';
 import type { User } from '../types';
 
 interface Agency {
-  id: string;
+  id?: string;
   name: string;
   code: string;
 }
