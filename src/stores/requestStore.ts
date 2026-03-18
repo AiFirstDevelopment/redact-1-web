@@ -13,6 +13,7 @@ interface RequestState {
   fetchFiles: (requestId: string) => Promise<void>;
   createRequest: (data: Partial<Request>) => Promise<Request>;
   uploadFile: (requestId: string, file: File) => Promise<EvidenceFile>;
+  deleteFile: (fileId: string) => Promise<void>;
 }
 
 export const useRequestStore = create<RequestState>((set) => ({
@@ -72,6 +73,17 @@ export const useRequestStore = create<RequestState>((set) => ({
       return uploadedFile;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to upload file', isLoading: false });
+      throw e;
+    }
+  },
+
+  deleteFile: async (fileId: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      await api.deleteFile(fileId);
+      set((state) => ({ files: state.files.filter((f) => f.id !== fileId), isLoading: false }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to delete file', isLoading: false });
       throw e;
     }
   },

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRequestStore } from '../stores/requestStore';
-import type { Request } from '../types';
+import type { Request, EvidenceFile } from '../types';
 
 interface RequestDetailPanelProps {
   request: Request;
@@ -9,8 +9,10 @@ interface RequestDetailPanelProps {
 }
 
 export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps) {
-  const { files, fetchFiles, uploadFile } = useRequestStore();
+  const { files, fetchFiles, uploadFile, deleteFile } = useRequestStore();
   const [isUploading, setIsUploading] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<EvidenceFile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -63,8 +65,26 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
     navigate(`/files/${fileId}`);
   };
 
+  const handleDeleteClick = (e: React.MouseEvent, file: EvidenceFile) => {
+    e.stopPropagation();
+    setFileToDelete(file);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!fileToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteFile(fileToDelete.id);
+      setFileToDelete(null);
+    } catch (err) {
+      console.error('Delete failed:', err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       {/* Header */}
       <div className="p-4 border-b flex justify-between items-center bg-gray-50">
         <div>
@@ -111,27 +131,29 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
         {/* Files Section */}
         <div className="bg-white border rounded-lg p-4">
           <div className="flex justify-between items-center mb-4">
-            <h4 className="font-semibold">Files</h4>
-            <label className={`px-3 py-1.5 text-sm rounded-md cursor-pointer ${
-              isUploading
-                ? 'bg-gray-300 text-gray-500'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}>
-              {isUploading ? 'Uploading...' : 'Upload File'}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,.pdf"
-                onChange={handleFileUpload}
-                disabled={isUploading}
-                className="hidden"
-              />
-            </label>
+            <h4 className="font-semibold">File</h4>
+            {files.length === 0 && (
+              <label className={`px-3 py-1.5 text-sm rounded-md cursor-pointer ${
+                isUploading
+                  ? 'bg-gray-300 text-gray-500'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}>
+                {isUploading ? 'Uploading...' : 'Upload PDF'}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                  className="hidden"
+                />
+              </label>
+            )}
           </div>
 
           {files.length === 0 ? (
             <p className="text-gray-500 text-center py-4 text-sm">
-              No files uploaded yet.
+              No file uploaded yet.
             </p>
           ) : (
             <div className="space-y-2">
@@ -142,29 +164,57 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
                   className="flex items-center gap-3 p-3 border rounded-lg hover:border-blue-300 cursor-pointer transition-colors"
                 >
                   <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
-                    {file.file_type === 'image' ? (
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                      </svg>
-                    )}
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">{file.filename}</p>
                     <p className="text-xs text-gray-500">{formatFileSize(file.file_size)}</p>
                   </div>
-                  <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(file.status)}`}>
-                    {file.status}
-                  </span>
+                  <button
+                    onClick={(e) => handleDeleteClick(e, file)}
+                    className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
+                    title="Delete file"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {fileToDelete && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Delete File</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete <span className="font-semibold">{fileToDelete.filename}</span>? This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setFileToDelete(null)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

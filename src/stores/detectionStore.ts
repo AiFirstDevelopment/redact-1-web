@@ -9,8 +9,9 @@ interface DetectionState {
   isLoading: boolean;
   error: string | null;
   fetchDetections: (fileId: string) => Promise<void>;
-  detectFaces: (fileId: string) => Promise<void>;
+  detectFaces: (fileId: string, pageImageBlob?: Blob, pageNumber?: number) => Promise<void>;
   updateDetection: (id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number }) => Promise<void>;
+  deleteDetection: (id: string) => Promise<void>;
   selectDetection: (id: string | null) => void;
   createManualRedaction: (fileId: string, data: Partial<ManualRedaction>) => Promise<void>;
   deleteManualRedaction: (id: string) => Promise<void>;
@@ -33,10 +34,13 @@ export const useDetectionStore = create<DetectionState>((set) => ({
     }
   },
 
-  detectFaces: async (fileId: string) => {
-    set({ isLoading: true, error: null });
+  detectFaces: async (fileId: string, pageImageBlob?: Blob, pageNumber?: number) => {
+    // Don't set isLoading for individual pages to avoid flicker
+    if (!pageImageBlob) {
+      set({ isLoading: true, error: null });
+    }
     try {
-      const { detections } = await api.detectFaces(fileId);
+      const { detections } = await api.detectFaces(fileId, pageImageBlob, pageNumber);
       set((state) => ({
         detections: [...state.detections, ...detections],
         isLoading: false
@@ -55,6 +59,19 @@ export const useDetectionStore = create<DetectionState>((set) => ({
       }));
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to update detection' });
+      throw e;
+    }
+  },
+
+  deleteDetection: async (id: string) => {
+    try {
+      // Update status to 'rejected' which removes it from view
+      await api.updateDetection(id, { status: 'rejected' });
+      set((state) => ({
+        detections: state.detections.filter((d) => d.id !== id),
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to delete detection' });
       throw e;
     }
   },

@@ -124,13 +124,52 @@ class ApiService {
     return response.blob();
   }
 
-  async detectFaces(fileId: string): Promise<{ detections: Detection[]; count: number }> {
+  async detectFaces(fileId: string, pageImageBlob?: Blob, pageNumber?: number): Promise<{ detections: Detection[]; count: number }> {
+    if (pageImageBlob) {
+      // For PDFs, send the rendered page image
+      const token = this.getToken();
+      const url = pageNumber
+        ? `${API_BASE}/api/files/${fileId}/detect?page=${pageNumber}`
+        : `${API_BASE}/api/files/${fileId}/detect`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': pageImageBlob.type,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: pageImageBlob,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(error.error || `HTTP ${response.status}`);
+      }
+
+      return response.json();
+    }
     return this.fetch(`/api/files/${fileId}/detect`, { method: 'POST' });
   }
 
   // Detections
   async listDetections(fileId: string): Promise<{ detections: Detection[]; manual_redactions: ManualRedaction[] }> {
     return this.fetch(`/api/files/${fileId}/detections`);
+  }
+
+  async createDetection(fileId: string, data: {
+    detection_type: string;
+    bbox_x: number;
+    bbox_y: number;
+    bbox_width: number;
+    bbox_height: number;
+    page_number?: number;
+    status?: string;
+  }): Promise<{ detections: Detection[] }> {
+    // API expects { detections: [...] } format
+    return this.fetch(`/api/files/${fileId}/detections`, {
+      method: 'POST',
+      body: JSON.stringify({ detections: [data] }),
+    });
   }
 
   async updateDetection(id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number }): Promise<{ detection: Detection }> {
