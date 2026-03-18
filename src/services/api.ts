@@ -150,6 +150,56 @@ class ApiService {
   async deleteManualRedaction(id: string): Promise<{ success: boolean }> {
     return this.fetch(`/api/manual-redactions/${id}`, { method: 'DELETE' });
   }
+
+  // Agencies
+  async getAgencyByCode(code: string): Promise<{ id: string; name: string; code: string }> {
+    const data = await this.fetch<{ agency: { id: string; name: string; code: string } }>(`/api/agencies/code/${code}`);
+    return data.agency;
+  }
+
+  // Archived requests
+  async listArchivedRequests(): Promise<{ requests: Request[] }> {
+    return this.fetch('/api/requests/archived');
+  }
+
+  async archiveRequest(id: string): Promise<{ request: Request }> {
+    return this.fetch(`/api/requests/${id}/archive`, { method: 'POST' });
+  }
+
+  async unarchiveRequest(id: string): Promise<{ request: Request }> {
+    return this.fetch(`/api/requests/${id}/unarchive`, { method: 'POST' });
+  }
+
+  async deleteRequest(id: string): Promise<{ success: boolean }> {
+    return this.fetch(`/api/requests/${id}`, { method: 'DELETE' });
+  }
+
+  async deleteFile(id: string): Promise<{ success: boolean }> {
+    return this.fetch(`/api/files/${id}`, { method: 'DELETE' });
+  }
+
+  // Users
+  async listUsers(): Promise<{ users: User[] }> {
+    return this.fetch('/api/users');
+  }
+
+  async createUser(data: { email: string; name: string; password: string; role: string }): Promise<{ user: User }> {
+    return this.fetch('/api/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUser(id: string, data: Partial<User>): Promise<{ user: User }> {
+    return this.fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteUser(id: string): Promise<{ success: boolean }> {
+    return this.fetch(`/api/users/${id}`, { method: 'DELETE' });
+  }
 }
 
 export const api = new ApiService();

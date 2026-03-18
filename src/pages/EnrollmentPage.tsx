@@ -1,26 +1,21 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 
-export function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const { login, isLoading, error, agency, clearError } = useAuthStore();
-  const navigate = useNavigate();
+export function EnrollmentPage() {
+  const [departmentCode, setDepartmentCode] = useState('');
+  const { enroll, isLoading, error, clearError } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await login(email, password);
-      navigate('/');
+      await enroll(departmentCode);
     } catch {
       // Error is handled by store
     }
   };
 
   const handleDemo = () => {
-    setEmail('supervisor@test.com');
-    setPassword('test123');
+    setDepartmentCode('SPRINGFIELD-PD');
     clearError();
   };
 
@@ -28,9 +23,7 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
         <h1 className="text-2xl font-bold mb-2 text-center">Redact-1</h1>
-        {agency && (
-          <p className="text-gray-600 text-center mb-6">{agency.name}</p>
-        )}
+        <p className="text-gray-600 text-center mb-6">Enter your department code to get started</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -41,36 +34,24 @@ export function LoginPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Email
+              Department Code
             </label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              type="text"
+              value={departmentCode}
+              onChange={(e) => setDepartmentCode(e.target.value.toUpperCase())}
+              placeholder="e.g., SPRINGFIELD-PD"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
               required
             />
           </div>
 
           <button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || !departmentCode}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
-            {isLoading ? 'Signing in...' : 'Sign In'}
+            {isLoading ? 'Verifying...' : 'Continue'}
           </button>
 
           <div className="relative">
@@ -87,7 +68,7 @@ export function LoginPage() {
             onClick={handleDemo}
             className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 border border-gray-300"
           >
-            Use Demo Credentials
+            Use Demo Department
           </button>
         </form>
       </div>

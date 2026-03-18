@@ -1,4 +1,4 @@
+export { EnrollmentPage } from './EnrollmentPage';
 export { LoginPage } from './LoginPage';
-export { RequestsPage } from './RequestsPage';
-export { RequestDetailPage } from './RequestDetailPage';
+export { MainPage } from './MainPage';
 export { FileReviewPage } from './FileReviewPage';

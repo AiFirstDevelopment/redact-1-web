@@ -1,21 +1,47 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
-import { LoginPage, RequestsPage, RequestDetailPage, FileReviewPage } from './pages';
+import { EnrollmentPage, LoginPage, MainPage, FileReviewPage } from './pages';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isEnrolled, isLoading } = useAuthStore();
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-gray-500">Loading...</div>
       </div>
     );
   }
 
+  if (!isEnrolled) {
+    return <Navigate to="/enroll" replace />;
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+function PublicRoute({ children, requireEnrolled = false }: { children: React.ReactNode; requireEnrolled?: boolean }) {
+  const { isAuthenticated, isEnrolled, isLoading } = useAuthStore();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (requireEnrolled && !isEnrolled) {
+    return <Navigate to="/enroll" replace />;
+  }
+
+  if (isAuthenticated && isEnrolled) {
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -30,20 +56,27 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/enroll"
+        element={
+          <PublicRoute>
+            <EnrollmentPage />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/login"
+        element={
+          <PublicRoute requireEnrolled>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
       <Route
         path="/"
         element={
           <ProtectedRoute>
-            <RequestsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/requests/:id"
-        element={
-          <ProtectedRoute>
-            <RequestDetailPage />
+            <MainPage />
           </ProtectedRoute>
         }
       />
