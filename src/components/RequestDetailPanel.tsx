@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRequestStore } from '../stores/requestStore';
 import { api } from '../services/api';
-import type { Request, EvidenceFile, User, AuditLog } from '../types';
+import type { Request, RequestTimeline, EvidenceFile, User, AuditLog } from '../types';
 
 interface RequestDetailPanelProps {
   request: Request;
@@ -21,6 +21,15 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   const [isAssigning, setIsAssigning] = useState(false);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [showAuditLog, setShowAuditLog] = useState(false);
+  const [timeline, setTimeline] = useState<RequestTimeline[]>([]);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [showTollModal, setShowTollModal] = useState(false);
+  const [showExtendModal, setShowExtendModal] = useState(false);
+  const [tollReason, setTollReason] = useState('');
+  const [extendReason, setExtendReason] = useState('');
+  const [extendDate, setExtendDate] = useState('');
+  const [isTolling, setIsTolling] = useState(false);
+  const [isExtending, setIsExtending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -80,6 +89,88 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   useEffect(() => {
     fetchAuditLogs();
   }, [request.id]);
+
+  const fetchTimeline = async () => {
+    try {
+      const { timeline } = await api.getRequestTimeline(request.id);
+      setTimeline(timeline);
+    } catch (err) {
+      console.error('Failed to fetch timeline:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchTimeline();
+  }, [request.id]);
+
+  const handleToll = async () => {
+    if (!tollReason.trim()) return;
+    setIsTolling(true);
+    try {
+      await api.tollRequest(request.id, tollReason);
+      setShowTollModal(false);
+      setTollReason('');
+      onRequestUpdated?.();
+      fetchTimeline();
+      fetchAuditLogs();
+    } catch (err) {
+      console.error('Failed to toll request:', err);
+    } finally {
+      setIsTolling(false);
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      await api.resumeRequest(request.id);
+      onRequestUpdated?.();
+      fetchTimeline();
+      fetchAuditLogs();
+    } catch (err) {
+      console.error('Failed to resume request:', err);
+    }
+  };
+
+  const handleExtend = async () => {
+    if (!extendReason.trim() || !extendDate) return;
+    setIsExtending(true);
+    try {
+      const newDueDate = new Date(extendDate).getTime();
+      await api.extendRequest(request.id, extendReason, newDueDate);
+      setShowExtendModal(false);
+      setExtendReason('');
+      setExtendDate('');
+      onRequestUpdated?.();
+      fetchTimeline();
+      fetchAuditLogs();
+    } catch (err) {
+      console.error('Failed to extend request:', err);
+    } finally {
+      setIsExtending(false);
+    }
+  };
+
+  const getDueDateStatus = () => {
+    if (!request.due_date) return null;
+    if (request.tolled_at) {
+      return { label: 'Tolled', className: 'bg-gray-200 text-gray-700' };
+    }
+    const now = Date.now();
+    const dueDate = request.due_date < 1e12 ? request.due_date * 1000 : request.due_date;
+    const daysRemaining = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+
+    if (daysRemaining < 0) {
+      return { label: `${Math.abs(daysRemaining)} days overdue`, className: 'bg-red-600 text-white' };
+    } else if (daysRemaining === 0) {
+      return { label: 'Due today', className: 'bg-orange-500 text-white' };
+    } else if (daysRemaining <= 3) {
+      return { label: `${daysRemaining} days remaining`, className: 'bg-yellow-500 text-white' };
+    } else if (daysRemaining <= 5) {
+      return { label: `${daysRemaining} days remaining`, className: 'bg-yellow-400 text-gray-900' };
+    } else {
+      return { label: `${daysRemaining} days remaining`, className: 'bg-green-100 text-green-800' };
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -220,6 +311,53 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
               </p>
             </div>
           </div>
+
+          {/* Due Date Section */}
+          {request.due_date && (
+            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-gray-500 text-sm">Due Date:</span>
+                {(() => {
+                  const status = getDueDateStatus();
+                  return status ? (
+                    <span className={`px-2 py-0.5 text-xs rounded-full ${status.className}`}>
+                      {status.label}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+              <p className="font-medium mb-3">{formatDate(request.due_date)}</p>
+              {request.tolled_days > 0 && (
+                <p className="text-xs text-gray-500 mb-2">
+                  Total tolled: {request.tolled_days} business days
+                </p>
+              )}
+              <div className="flex gap-2">
+                {request.tolled_at ? (
+                  <button
+                    onClick={handleResume}
+                    className="flex-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Resume Clock
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowTollModal(true)}
+                    className="flex-1 px-3 py-1.5 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+                  >
+                    Toll (Pause)
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowExtendModal(true)}
+                  className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Extend
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="mt-4">
             <span className="text-gray-500 text-sm">Assigned To:</span>
             <select
@@ -242,6 +380,55 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
             </div>
           )}
         </div>
+
+        {/* Due Date Timeline Section */}
+        {request.due_date && (
+          <div className="bg-card-white border rounded-lg p-4 mb-4 shadow-sm">
+            <button
+              onClick={() => setShowTimeline(!showTimeline)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <h4 className="font-semibold">Due Date History</h4>
+              <svg
+                className={`w-5 h-5 text-gray-500 transition-transform ${showTimeline ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showTimeline && (
+              <div className="mt-3 space-y-2 max-h-48 overflow-auto">
+                {timeline.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No timeline events.</p>
+                ) : (
+                  timeline.map((event) => (
+                    <div key={event.id} className="text-sm border-l-2 border-blue-200 pl-3 py-1">
+                      <div className="flex justify-between items-start">
+                        <span className="font-medium text-gray-900 capitalize">
+                          {event.event_type.replace('_', ' ')}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          {formatDate(event.created_at)}
+                        </span>
+                      </div>
+                      {event.reason && (
+                        <p className="text-gray-600 text-xs">{event.reason}</p>
+                      )}
+                      {event.new_due_date && (
+                        <p className="text-gray-500 text-xs">
+                          New due date: {formatDate(event.new_due_date)}
+                        </p>
+                      )}
+                      <p className="text-gray-400 text-xs">by {event.user_name || 'System'}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Audit Trail Section */}
         <div className="bg-card-white border rounded-lg p-4 mb-4 shadow-sm">
@@ -419,6 +606,89 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
                 disabled={isDeleting}
               >
                 {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toll Modal */}
+      {showTollModal && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Toll (Pause) Due Date</h3>
+            <p className="text-gray-600 text-sm mb-4">
+              Tolling pauses the deadline clock. The due date will be extended by the number of business days tolled when resumed.
+            </p>
+            <label className="block text-sm text-gray-700 mb-2">Reason for tolling:</label>
+            <textarea
+              value={tollReason}
+              onChange={(e) => setTollReason(e.target.value)}
+              placeholder="e.g., Awaiting clarification from requester"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 mb-4"
+              rows={3}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowTollModal(false);
+                  setTollReason('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                disabled={isTolling}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleToll}
+                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50"
+                disabled={isTolling || !tollReason.trim()}
+              >
+                {isTolling ? 'Tolling...' : 'Toll Clock'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Extend Modal */}
+      {showExtendModal && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Extend Due Date</h3>
+            <label className="block text-sm text-gray-700 mb-2">Reason for extension:</label>
+            <textarea
+              value={extendReason}
+              onChange={(e) => setExtendReason(e.target.value)}
+              placeholder="e.g., Unusual circumstances - voluminous records"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 mb-4"
+              rows={2}
+            />
+            <label className="block text-sm text-gray-700 mb-2">New due date:</label>
+            <input
+              type="date"
+              value={extendDate}
+              onChange={(e) => setExtendDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowExtendModal(false);
+                  setExtendReason('');
+                  setExtendDate('');
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                disabled={isExtending}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExtend}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                disabled={isExtending || !extendReason.trim() || !extendDate}
+              >
+                {isExtending ? 'Extending...' : 'Extend'}
               </button>
             </div>
           </div>

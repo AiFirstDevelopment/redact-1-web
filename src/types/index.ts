@@ -10,6 +10,9 @@ export interface Request {
   request_number: string;
   title: string;
   request_date: number;
+  due_date: number | null;
+  tolled_at: number | null;
+  tolled_days: number;
   notes: string | null;
   status: 'new' | 'in_progress' | 'completed';
   created_by: string;
@@ -18,6 +21,18 @@ export interface Request {
   updated_at: number;
   file_count?: number;
   files_completed?: number;
+}
+
+export interface RequestTimeline {
+  id: string;
+  request_id: string;
+  event_type: 'created' | 'tolled' | 'resumed' | 'extended' | 'due_date_set';
+  reason: string | null;
+  previous_due_date: number | null;
+  new_due_date: number | null;
+  created_by: string;
+  user_name?: string;
+  created_at: number;
 }
 
 export interface EvidenceFile {
@@ -123,7 +138,16 @@ export interface AuditLog {
   created_at: number;
 }
 
+export interface Agency {
+  id: string;
+  code: string;
+  name: string;
+  default_deadline_days: number;
+  deadline_type: 'business_days' | 'calendar_days';
+}
+
 export interface LoginResponse {
   token: string;
   user: User;
+  agency?: Agency;
 }

@@ -258,6 +258,28 @@ export function RequestsList({
     return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800';
   };
 
+  const getDueDateStatus = (request: Request) => {
+    if (!request.due_date) return null;
+    if (request.tolled_at) {
+      return { label: 'Tolled', className: 'bg-gray-200 text-gray-700' };
+    }
+    const now = Date.now();
+    const dueDate = request.due_date < 1e12 ? request.due_date * 1000 : request.due_date;
+    const daysRemaining = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+
+    if (daysRemaining < 0) {
+      return { label: `${Math.abs(daysRemaining)}d overdue`, className: 'bg-red-600 text-white' };
+    } else if (daysRemaining === 0) {
+      return { label: 'Due today', className: 'bg-orange-500 text-white' };
+    } else if (daysRemaining <= 3) {
+      return { label: `${daysRemaining}d left`, className: 'bg-yellow-500 text-white' };
+    } else if (daysRemaining <= 5) {
+      return { label: `${daysRemaining}d left`, className: 'bg-yellow-400 text-gray-900' };
+    } else {
+      return { label: `${daysRemaining}d left`, className: 'bg-green-100 text-green-800' };
+    }
+  };
+
   const highlightMatch = (text: string) => {
     if (!searchTerm.trim()) return text;
     const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
@@ -363,6 +385,17 @@ export function RequestsList({
                     {request.files_completed ?? 0}/{request.file_count} file{request.file_count !== 1 ? 's' : ''}
                   </span>
                 )}
+                {(() => {
+                  const dueStatus = getDueDateStatus(request);
+                  return dueStatus ? (
+                    <span
+                      className={`px-2 py-0.5 text-xs rounded-full ${dueStatus.className}`}
+                      title={request.due_date ? `Due: ${formatDate(request.due_date)}` : ''}
+                    >
+                      {dueStatus.label}
+                    </span>
+                  ) : null;
+                })()}
               </div>
               {editingId === request.id ? (
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -406,8 +439,11 @@ export function RequestsList({
                   {request.title ? highlightMatch(request.title) : 'Add title...'}
                 </p>
               )}
-              <p className="text-sm text-gray-500 mt-1" title="Date request was received">
-                {formatDate(request.request_date)}
+              <p className="text-sm text-gray-500 mt-1">
+                <span title="Date request was received">Received: {formatDate(request.request_date)}</span>
+                {request.due_date && (
+                  <span className="ml-3" title="Response due date">Due: {formatDate(request.due_date)}</span>
+                )}
               </p>
               <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                 <select

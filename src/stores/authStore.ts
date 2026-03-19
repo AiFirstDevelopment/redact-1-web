@@ -1,12 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../services/api';
-import type { User } from '../types';
-
-interface Agency {
-  id?: string;
-  name: string;
-  code: string;
-}
+import type { User, Agency } from '../types';
 
 interface AuthState {
   user: User | null;
@@ -33,8 +27,32 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null });
     try {
-      const { user } = await api.login(email, password);
-      set({ user, isAuthenticated: true, isLoading: false });
+      const response = await api.login(email, password);
+      let agency = response.agency as Agency | undefined;
+
+      // If user has no agency in DB but has one in localStorage, sync it
+      if (!agency) {
+        const storedAgency = localStorage.getItem('agency');
+        if (storedAgency) {
+          try {
+            const parsed = JSON.parse(storedAgency);
+            // Call enroll API to sync localStorage agency to DB
+            const enrollResponse = await api.enroll(parsed.code);
+            agency = enrollResponse.agency;
+          } catch {
+            // If enroll fails, clear localStorage agency
+            localStorage.removeItem('agency');
+          }
+        }
+      }
+
+      set({
+        user: response.user,
+        agency: agency || null,
+        isAuthenticated: true,
+        isEnrolled: !!agency,
+        isLoading: false
+      });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Login failed', isLoading: false });
       throw e;
@@ -51,36 +69,46 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   checkAuth: async () => {
     const token = api.getToken();
-    const agencyStr = localStorage.getItem('agency');
-    const agency = agencyStr ? JSON.parse(agencyStr) : null;
-
-    if (!agencyStr) {
-      set({ isLoading: false, isAuthenticated: false, isEnrolled: false });
-      return;
-    }
-
-    set({ agency, isEnrolled: true });
+    const storedAgency = localStorage.getItem('agency');
 
     if (!token) {
-      set({ isLoading: false, isAuthenticated: false });
+      // Not logged in, but may have enrolled (agency in localStorage)
+      if (storedAgency) {
+        try {
+          const agency = JSON.parse(storedAgency) as Agency;
+          set({ agency, isEnrolled: true, isLoading: false, isAuthenticated: false });
+        } catch {
+          set({ isLoading: false, isAuthenticated: false, isEnrolled: false });
+        }
+      } else {
+        set({ isLoading: false, isAuthenticated: false, isEnrolled: false });
+      }
       return;
     }
 
     try {
-      const { user } = await api.me();
-      set({ user, isAuthenticated: true, isLoading: false });
+      const { user, agency } = await api.me();
+      set({
+        user,
+        agency: agency || null,
+        isAuthenticated: true,
+        isEnrolled: !!agency,
+        isLoading: false
+      });
     } catch {
       api.setToken(null);
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, agency: null, isAuthenticated: false, isEnrolled: false, isLoading: false });
     }
   },
 
+  // Pre-login enrollment: verify department code and store in localStorage
   enroll: async (departmentCode: string) => {
     set({ isLoading: true, error: null });
     try {
       const agency = await api.getAgencyByCode(departmentCode);
+      // Store in localStorage for syncing after login
       localStorage.setItem('agency', JSON.stringify(agency));
-      set({ agency, isEnrolled: true, isLoading: false });
+      set({ agency: agency as Agency, isEnrolled: true, isLoading: false });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Invalid department code', isLoading: false });
       throw e;

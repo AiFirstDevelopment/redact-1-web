@@ -14,6 +14,8 @@ export const mockAgency = {
   id: 'agency-1',
   name: 'Springfield Police Department',
   code: 'SPRINGFIELD-PD',
+  default_deadline_days: 10,
+  deadline_type: 'business_days' as const,
 };
 
 export const mockRequest = {
@@ -21,6 +23,9 @@ export const mockRequest = {
   request_number: 'RR-20260318-001',
   title: 'Test Request',
   request_date: Date.now(),
+  due_date: Date.now() + 10 * 24 * 60 * 60 * 1000, // 10 days from now
+  tolled_at: null,
+  tolled_days: 0,
   notes: null,
   status: 'new' as const,
   created_by: 'user-1',
@@ -72,9 +77,12 @@ export const handlers = [
   http.post(`${API_BASE}/api/auth/login`, async ({ request }) => {
     const body = await request.json() as { email: string; password: string };
     if (body.email === 'test@test.com' && body.password === 'password') {
-      return HttpResponse.json({ token: 'mock-token', user: mockUser });
+      return HttpResponse.json({ token: 'mock-token', user: mockUser, agency: mockAgency });
     }
     if (body.email === 'supervisor@test.com' && body.password === 'test123') {
+      return HttpResponse.json({ token: 'mock-token', user: mockUser, agency: mockAgency });
+    }
+    if (body.email === 'noenroll@test.com' && body.password === 'password') {
       return HttpResponse.json({ token: 'mock-token', user: mockUser });
     }
     return HttpResponse.json({ error: 'Invalid credentials' }, { status: 401 });
@@ -87,9 +95,24 @@ export const handlers = [
   http.get(`${API_BASE}/api/auth/me`, ({ request }) => {
     const auth = request.headers.get('Authorization');
     if (auth === 'Bearer mock-token') {
+      return HttpResponse.json({ user: mockUser, agency: mockAgency });
+    }
+    if (auth === 'Bearer no-agency-token') {
       return HttpResponse.json({ user: mockUser });
     }
     return HttpResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }),
+
+  http.post(`${API_BASE}/api/auth/enroll`, async ({ request }) => {
+    const auth = request.headers.get('Authorization');
+    if (!auth?.startsWith('Bearer ')) {
+      return HttpResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const body = await request.json() as { code: string };
+    if (body.code === 'SPRINGFIELD-PD') {
+      return HttpResponse.json({ agency: mockAgency });
+    }
+    return HttpResponse.json({ error: 'Department not found' }, { status: 404 });
   }),
 
   // Agencies
@@ -98,6 +121,18 @@ export const handlers = [
       return HttpResponse.json({ agency: mockAgency });
     }
     return HttpResponse.json({ error: 'Agency not found' }, { status: 404 });
+  }),
+
+  http.put(`${API_BASE}/api/agencies/:id`, async ({ params, request }) => {
+    const body = await request.json() as { default_deadline_days?: number; deadline_type?: string };
+    return HttpResponse.json({
+      agency: {
+        ...mockAgency,
+        id: params.id as string,
+        default_deadline_days: body.default_deadline_days ?? mockAgency.default_deadline_days,
+        deadline_type: body.deadline_type ?? mockAgency.deadline_type,
+      },
+    });
   }),
 
   // Requests
@@ -148,6 +183,37 @@ export const handlers = [
 
   http.post(`${API_BASE}/api/requests/:id/unarchive`, ({ params }) => {
     return HttpResponse.json({ request: { ...mockRequest, id: params.id, archived_at: null } });
+  }),
+
+  http.post(`${API_BASE}/api/requests/:id/toll`, ({ params }) => {
+    return HttpResponse.json({ request: { ...mockRequest, id: params.id, tolled_at: Date.now() } });
+  }),
+
+  http.post(`${API_BASE}/api/requests/:id/resume`, ({ params }) => {
+    return HttpResponse.json({ request: { ...mockRequest, id: params.id, tolled_at: null, tolled_days: 1 } });
+  }),
+
+  http.post(`${API_BASE}/api/requests/:id/extend`, async ({ params, request }) => {
+    const body = await request.json() as { new_due_date: number };
+    return HttpResponse.json({ request: { ...mockRequest, id: params.id, due_date: body.new_due_date } });
+  }),
+
+  http.get(`${API_BASE}/api/requests/:id/timeline`, ({ params }) => {
+    return HttpResponse.json({
+      timeline: [
+        {
+          id: 'timeline-1',
+          request_id: params.id,
+          event_type: 'created',
+          reason: null,
+          previous_due_date: null,
+          new_due_date: mockRequest.due_date,
+          created_by: 'user-1',
+          user_name: 'Test User',
+          created_at: Date.now(),
+        },
+      ],
+    });
   }),
 
   // Files

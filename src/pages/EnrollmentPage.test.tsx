@@ -101,9 +101,13 @@ describe('EnrollmentPage', () => {
     await user.click(submitButton);
 
     await waitFor(() => {
+      // Pre-login enrollment stores in localStorage and state
       const stored = localStorage.getItem('agency');
       expect(stored).toBeTruthy();
       expect(JSON.parse(stored!).code).toBe('SPRINGFIELD-PD');
+
+      const state = useAuthStore.getState();
+      expect(state.isEnrolled).toBe(true);
     });
   });
 

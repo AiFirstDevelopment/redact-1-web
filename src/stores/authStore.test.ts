@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAuthStore } from './authStore';
+import { api } from '../services/api';
 import { mockUser, mockAgency } from '../test/handlers';
 
 describe('authStore', () => {
@@ -14,6 +15,8 @@ describe('authStore', () => {
       error: null,
     });
     localStorage.clear();
+    // Clear the API service token cache
+    api.setToken(null);
   });
 
   describe('initial state', () => {
@@ -27,7 +30,7 @@ describe('authStore', () => {
       expect(state.isAuthenticated).toBe(false);
     });
 
-    it('starts not enrolled', () => {
+    it('starts not enrolled when no agency in localStorage', () => {
       const state = useAuthStore.getState();
       expect(state.isEnrolled).toBe(false);
     });
@@ -64,6 +67,31 @@ describe('authStore', () => {
       expect(state.user).toEqual(mockUser);
       expect(state.isAuthenticated).toBe(true);
       expect(state.isLoading).toBe(false);
+    });
+
+    it('sets agency and enrolled when login returns agency', async () => {
+      const { login } = useAuthStore.getState();
+
+      await login('test@test.com', 'password');
+
+      const state = useAuthStore.getState();
+      expect(state.agency).toEqual(mockAgency);
+      expect(state.isEnrolled).toBe(true);
+    });
+
+    it('syncs localStorage agency to DB when login returns no agency', async () => {
+      // Pre-enroll via localStorage
+      localStorage.setItem('agency', JSON.stringify(mockAgency));
+
+      const { login } = useAuthStore.getState();
+
+      // Login with user that has no agency
+      await login('noenroll@test.com', 'password');
+
+      const state = useAuthStore.getState();
+      // Should have synced the agency
+      expect(state.agency).toEqual(mockAgency);
+      expect(state.isEnrolled).toBe(true);
     });
 
     it('stores token in localStorage on successful login', async () => {
@@ -110,7 +138,7 @@ describe('authStore', () => {
     });
   });
 
-  describe('enroll', () => {
+  describe('enroll (pre-login)', () => {
     it('sets loading state during enrollment', async () => {
       const { enroll } = useAuthStore.getState();
 
@@ -132,7 +160,7 @@ describe('authStore', () => {
       expect(state.isLoading).toBe(false);
     });
 
-    it('stores agency in localStorage', async () => {
+    it('stores agency in localStorage for syncing after login', async () => {
       const { enroll } = useAuthStore.getState();
 
       await enroll('SPRINGFIELD-PD');
@@ -154,41 +182,34 @@ describe('authStore', () => {
   });
 
   describe('checkAuth', () => {
-    it('sets not enrolled if no agency in localStorage', async () => {
-      const { checkAuth } = useAuthStore.getState();
-
-      await checkAuth();
-
-      const state = useAuthStore.getState();
-      expect(state.isEnrolled).toBe(false);
-      expect(state.isLoading).toBe(false);
-    });
-
-    it('sets enrolled if agency in localStorage', async () => {
-      localStorage.setItem('agency', JSON.stringify(mockAgency));
-      const { checkAuth } = useAuthStore.getState();
-
-      await checkAuth();
-
-      const state = useAuthStore.getState();
-      expect(state.isEnrolled).toBe(true);
-      expect(state.agency).toEqual(mockAgency);
-    });
-
-    it('sets not authenticated if no token', async () => {
-      localStorage.setItem('agency', JSON.stringify(mockAgency));
+    it('sets not authenticated and not enrolled if no token and no agency', async () => {
       const { checkAuth } = useAuthStore.getState();
 
       await checkAuth();
 
       const state = useAuthStore.getState();
       expect(state.isAuthenticated).toBe(false);
+      expect(state.isEnrolled).toBe(false);
       expect(state.isLoading).toBe(false);
     });
 
-    it('sets authenticated if valid token', async () => {
+    it('sets enrolled from localStorage if no token but agency exists', async () => {
       localStorage.setItem('agency', JSON.stringify(mockAgency));
+
+      const { checkAuth } = useAuthStore.getState();
+
+      await checkAuth();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.isEnrolled).toBe(true);
+      expect(state.agency).toEqual(mockAgency);
+    });
+
+    it('sets authenticated and enrolled from API if valid token', async () => {
       localStorage.setItem('token', 'mock-token');
+      api.setToken('mock-token');
+
       const { checkAuth } = useAuthStore.getState();
 
       await checkAuth();
@@ -196,14 +217,27 @@ describe('authStore', () => {
       const state = useAuthStore.getState();
       expect(state.isAuthenticated).toBe(true);
       expect(state.user).toEqual(mockUser);
+      expect(state.agency).toEqual(mockAgency);
+      expect(state.isEnrolled).toBe(true);
+    });
+
+    it('sets authenticated but not enrolled if valid token without agency', async () => {
+      localStorage.setItem('token', 'no-agency-token');
+      api.setToken('no-agency-token');
+
+      const { checkAuth } = useAuthStore.getState();
+
+      await checkAuth();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(true);
+      expect(state.user).toEqual(mockUser);
+      expect(state.agency).toBeNull();
+      expect(state.isEnrolled).toBe(false);
     });
 
     it('clears token and sets not authenticated if API returns unauthorized', async () => {
-      localStorage.setItem('agency', JSON.stringify(mockAgency));
       localStorage.setItem('token', 'invalid-token');
-
-      // Reset the API service token cache by importing fresh
-      const { api } = await import('../services/api');
       api.setToken('invalid-token');
 
       const { checkAuth } = useAuthStore.getState();
@@ -211,8 +245,8 @@ describe('authStore', () => {
       await checkAuth();
 
       const state = useAuthStore.getState();
-      // After failed auth check, should be not authenticated
       expect(state.isAuthenticated).toBe(false);
+      expect(state.isEnrolled).toBe(false);
     });
   });
 

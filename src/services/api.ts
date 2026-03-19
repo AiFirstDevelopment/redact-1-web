@@ -1,4 +1,4 @@
-import type { User, Request, EvidenceFile, Detection, ManualRedaction, LoginResponse, AuditLog } from '../types';
+import type { User, Request, RequestTimeline, EvidenceFile, Detection, ManualRedaction, LoginResponse, AuditLog } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev';
 
@@ -60,8 +60,15 @@ class ApiService {
     this.setToken(null);
   }
 
-  async me(): Promise<{ user: User }> {
+  async me(): Promise<{ user: User; agency?: { id: string; code: string; name: string; default_deadline_days: number; deadline_type: 'business_days' | 'calendar_days' } }> {
     return this.fetch('/api/auth/me');
+  }
+
+  async enroll(code: string): Promise<{ agency: { id: string; code: string; name: string; default_deadline_days: number; deadline_type: 'business_days' | 'calendar_days' } }> {
+    return this.fetch('/api/auth/enroll', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
   }
 
   // Requests
@@ -205,9 +212,16 @@ class ApiService {
   }
 
   // Agencies
-  async getAgencyByCode(code: string): Promise<{ id: string; name: string; code: string }> {
-    const data = await this.fetch<{ agency: { id: string; name: string; code: string } }>(`/api/agencies/code/${code}`);
+  async getAgencyByCode(code: string): Promise<{ id: string; name: string; code: string; default_deadline_days?: number; deadline_type?: 'business_days' | 'calendar_days' }> {
+    const data = await this.fetch<{ agency: { id: string; name: string; code: string; default_deadline_days?: number; deadline_type?: 'business_days' | 'calendar_days' } }>(`/api/agencies/code/${code}`);
     return data.agency;
+  }
+
+  async updateAgency(id: string, data: { default_deadline_days?: number; deadline_type?: string }): Promise<{ agency: { id: string } }> {
+    return this.fetch(`/api/agencies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   }
 
   // Archived requests
@@ -230,6 +244,29 @@ class ApiService {
 
   async deleteRequest(id: string): Promise<{ success: boolean }> {
     return this.fetch(`/api/requests/${id}`, { method: 'DELETE' });
+  }
+
+  // Due date management
+  async tollRequest(id: string, reason: string): Promise<{ request: Request }> {
+    return this.fetch(`/api/requests/${id}/toll`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async resumeRequest(id: string): Promise<{ request: Request }> {
+    return this.fetch(`/api/requests/${id}/resume`, { method: 'POST' });
+  }
+
+  async extendRequest(id: string, reason: string, newDueDate: number): Promise<{ request: Request }> {
+    return this.fetch(`/api/requests/${id}/extend`, {
+      method: 'POST',
+      body: JSON.stringify({ reason, new_due_date: newDueDate }),
+    });
+  }
+
+  async getRequestTimeline(id: string): Promise<{ timeline: RequestTimeline[] }> {
+    return this.fetch(`/api/requests/${id}/timeline`);
   }
 
   async deleteFile(id: string): Promise<{ success: boolean }> {
