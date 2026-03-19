@@ -11,7 +11,7 @@ interface RequestState {
   fetchRequests: () => Promise<void>;
   fetchRequest: (id: string) => Promise<void>;
   fetchFiles: (requestId: string) => Promise<void>;
-  createRequest: (data: Partial<Request>) => Promise<Request>;
+  createRequest: (data: Partial<Request> & { assign_to?: string }) => Promise<Request>;
   uploadFile: (requestId: string, file: File) => Promise<EvidenceFile>;
   deleteFile: (fileId: string) => Promise<void>;
 }
@@ -53,7 +53,7 @@ export const useRequestStore = create<RequestState>((set) => ({
     }
   },
 
-  createRequest: async (data: Partial<Request>) => {
+  createRequest: async (data: Partial<Request> & { assign_to?: string }) => {
     set({ isLoading: true, error: null });
     try {
       const { request } = await api.createRequest(data);

@@ -112,6 +112,17 @@ export interface ManualRedaction {
   created_at: number;
 }
 
+export interface AuditLog {
+  id: string;
+  user_id: string;
+  user_name: string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  details: string | null;
+  created_at: number;
+}
+
 export interface LoginResponse {
   token: string;
   user: User;

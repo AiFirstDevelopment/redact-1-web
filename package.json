@@ -13,6 +13,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "file-saver": "^2.0.5",
+    "jszip": "^3.10.1",
     "konva": "^9.3.6",
     "pdfjs-dist": "^5.4.624",
     "react": "^18.3.1",
@@ -27,10 +29,12 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^25.5.0",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "@vitest/coverage-v8": "^4.1.0",
     "autoprefixer": "^10.4.19",
     "eslint": "^9.9.1",
     "eslint-plugin-react-hooks": "^5.1.0-rc.0",

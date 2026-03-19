@@ -1,6 +1,12 @@
-import { useState } from 'react';
-import type { Request } from '../types';
+import { useState, useEffect } from 'react';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import type { Request, User, Detection } from '../types';
 import { api } from '../services/api';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 interface RequestsListProps {
   requests: Request[];
@@ -31,6 +37,154 @@ export function RequestsList({
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [users, setUsers] = useState<User[]>([]);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const { users } = await api.listUsers();
+        setUsers(users);
+      } catch (err) {
+        console.error('Failed to load users:', err);
+      }
+    };
+    loadUsers();
+  }, []);
+
+  const handleAssignmentChange = async (e: React.ChangeEvent<HTMLSelectElement>, requestId: string) => {
+    e.stopPropagation();
+    const userId = e.target.value;
+    setAssigningId(requestId);
+    try {
+      await api.updateRequest(requestId, { created_by: userId });
+      onRequestUpdated?.();
+    } catch (err) {
+      console.error('Failed to assign request:', err);
+    } finally {
+      setAssigningId(null);
+    }
+  };
+
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownload = async (e: React.MouseEvent, request: Request) => {
+    e.stopPropagation();
+    setDownloadingId(request.id);
+
+    try {
+      const zip = new JSZip();
+
+      // Get files for this request
+      const { files } = await api.listFiles(request.id);
+
+      // Process each file
+      for (const file of files) {
+        // Get detections for this file
+        const { detections } = await api.listDetections(file.id);
+        const approvedDetections = detections.filter((d: Detection) => d.status === 'approved');
+
+        // Get original file
+        const blob = await api.getFileOriginal(file.id);
+
+        if (file.file_type === 'pdf') {
+          // Render PDF with redactions
+          const arrayBuffer = await blob.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          const redactedFolder = zip.folder('redacted');
+
+          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 2 });
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d')!;
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            // Render page
+            await page.render({
+              canvasContext: context,
+              viewport: viewport,
+              canvas: canvas,
+            } as Parameters<typeof page.render>[0]).promise;
+
+            // Draw black rectangles over approved detections for this page
+            context.fillStyle = '#000000';
+            for (const detection of approvedDetections) {
+              if (detection.page_number === pageNum || detection.page_number === null) {
+                const x = (detection.bbox_x ?? 0) * canvas.width;
+                const y = (detection.bbox_y ?? 0) * canvas.height;
+                const w = (detection.bbox_width ?? 0) * canvas.width;
+                const h = (detection.bbox_height ?? 0) * canvas.height;
+                context.fillRect(x, y, w, h);
+              }
+            }
+
+            // Convert to blob and add to zip
+            const pageBlob = await new Promise<Blob>((resolve) => {
+              canvas.toBlob((b) => resolve(b!), 'image/png');
+            });
+            const baseName = file.filename.replace(/\.[^/.]+$/, '');
+            redactedFolder?.file(`${baseName}_page${pageNum}.png`, pageBlob);
+          }
+        } else {
+          // For images, render with redactions
+          const img = new Image();
+          const url = URL.createObjectURL(blob);
+          await new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.src = url;
+          });
+
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const context = canvas.getContext('2d')!;
+          context.drawImage(img, 0, 0);
+
+          // Draw redactions
+          context.fillStyle = '#000000';
+          for (const detection of approvedDetections) {
+            const x = (detection.bbox_x ?? 0) * canvas.width;
+            const y = (detection.bbox_y ?? 0) * canvas.height;
+            const w = (detection.bbox_width ?? 0) * canvas.width;
+            const h = (detection.bbox_height ?? 0) * canvas.height;
+            context.fillRect(x, y, w, h);
+          }
+
+          const redactedBlob = await new Promise<Blob>((resolve) => {
+            canvas.toBlob((b) => resolve(b!), 'image/png');
+          });
+          const baseName = file.filename.replace(/\.[^/.]+$/, '');
+          zip.folder('redacted')?.file(`${baseName}_redacted.png`, redactedBlob);
+          URL.revokeObjectURL(url);
+        }
+      }
+
+      // Add audit trail
+      const { audit_logs } = await api.getRequestAuditLogs(request.id);
+      const auditText = [
+        `Audit Trail for ${request.request_number}`,
+        `Generated: ${new Date().toISOString()}`,
+        '',
+        ...audit_logs.map(log => {
+          const date = new Date(log.created_at < 1e12 ? log.created_at * 1000 : log.created_at);
+          return `[${date.toISOString()}] ${log.user_name || 'System'}: ${log.action} ${log.entity_type}${log.details ? ` - ${log.details}` : ''}`;
+        })
+      ].join('\n');
+      zip.file('audit_trail.txt', auditText);
+
+      // Generate and download zip
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const fileName = (request.title || request.request_number).replace(/[^a-zA-Z0-9-_]/g, '_');
+      saveAs(zipBlob, `${fileName}_redacted.zip`);
+    } catch (err) {
+      console.error('Failed to generate export:', err);
+      alert('Failed to generate export. Please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const filteredRequests = requests.filter(
     (r) =>
@@ -199,8 +353,51 @@ export function RequestsList({
                   <p className="text-sm text-gray-500 mt-1" title="Date request was received">
                     {formatDate(request.request_date)}
                   </p>
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={request.created_by}
+                      onChange={(e) => handleAssignmentChange(e, request.id)}
+                      disabled={assigningId === request.id}
+                      className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                    >
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 <div className="flex gap-1 ml-4">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(request);
+                    }}
+                    className="p-2 text-gray-400 hover:text-blue-600"
+                    title="Edit"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => handleDownload(e, request)}
+                    disabled={downloadingId === request.id || request.status !== 'completed'}
+                    className="p-2 text-gray-400 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title={request.status === 'completed' ? 'Download Redacted Files' : 'Complete review to enable download'}
+                  >
+                    {downloadingId === request.id ? (
+                      <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    )}
+                  </button>
                   {showArchived ? (
                     <button
                       onClick={(e) => {

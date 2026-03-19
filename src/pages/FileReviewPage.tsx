@@ -1,12 +1,27 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Stage, Layer, Image as KonvaImage, Rect, Circle, Group } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Rect, Circle, Group, Transformer } from 'react-konva';
 import Konva from 'konva';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useDetectionStore } from '../stores/detectionStore';
 import { api } from '../services/api';
-import { ExemptionCode, EXEMPTION_LABELS, DEFAULT_EXEMPTION_CODES, Detection } from '../types';
+import { ExemptionCode, DEFAULT_EXEMPTION_CODES, Detection } from '../types';
+import {
+  updateDetectionPosition,
+  updateDetectionSize,
+  approveDetection,
+  rejectDetection,
+  approveAllPendingOnPage,
+  rejectAllPendingOnPage,
+  filterRejectedLocalOnPage,
+  getPendingOnPage,
+  getModifiedDetections,
+  calculateToolbarPosition,
+  isValidPageChange,
+  type LocalDetection,
+} from '../utils/detectionUtils';
+import { DetectionToolbar } from '../components/DetectionToolbar';
 
 // Set up PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -39,7 +54,7 @@ export function FileReviewPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const requestId = searchParams.get('request');
-  const { detections, isLoading, error, fetchDetections } = useDetectionStore();
+  const { detections, isLoading, error, fetchDetections, updateDetection, deleteDetection } = useDetectionStore();
   const [image, setImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -51,24 +66,20 @@ export function FileReviewPage() {
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
-  const [localDetections, setLocalDetections] = useState<Array<{
-    id: string;
-    bbox_x: number;
-    bbox_y: number;
-    bbox_width: number;
-    bbox_height: number;
-    page_number: number | null;
-    status: string;
-    detection_type: string;
-    exemption_code: string | null;
-    comment: string | null;
-  }>>([]);
+  const [localDetections, setLocalDetections] = useState<LocalDetection[]>([]);
   const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
   const [toolbarExemptionCode, setToolbarExemptionCode] = useState<ExemptionCode>('b6');
   const [toolbarComment, setToolbarComment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [hasRunDetection, setHasRunDetection] = useState(false);
+  // Track modifications to server-side detections locally (not saved until Save is clicked)
+  const [modifiedServerDetections, setModifiedServerDetections] = useState<Detection[]>([]);
+  const [originalServerDetections, setOriginalServerDetections] = useState<Detection[]>([]);
+  const [hasModifications, setHasModifications] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
+  const transformerRef = useRef<Konva.Transformer>(null);
+  const shapeRefs = useRef<Map<string, Konva.Rect>>(new Map());
 
   const calculateDimensions = useCallback((imgWidth: number, imgHeight: number) => {
     if (!containerRef.current) return;
@@ -111,6 +122,17 @@ export function FileReviewPage() {
     }
   }, [id, fetchDetections]);
 
+  // If file already has saved detections, detection was already run
+  // Also initialize modifiedServerDetections when detections load
+  useEffect(() => {
+    if (detections.length > 0) {
+      setHasRunDetection(true);
+    }
+    // Initialize local copy of server detections
+    setModifiedServerDetections(detections);
+    setOriginalServerDetections(detections);
+  }, [detections]);
+
   const loadFile = async (fileId: string) => {
     try {
       setImageError(null);
@@ -142,7 +164,7 @@ export function FileReviewPage() {
   };
 
   const handlePageChange = async (newPage: number) => {
-    if (pdfDoc && newPage >= 1 && newPage <= totalPages) {
+    if (pdfDoc && isValidPageChange(newPage, totalPages)) {
       setCurrentPage(newPage);
       await renderPdfPage(pdfDoc, newPage);
     }
@@ -317,7 +339,10 @@ export function FileReviewPage() {
 
       setLocalDetections(prev => [...prev, ...newLocalDetections]);
       console.log('[Detection] Detection complete, added', newLocalDetections.length, 'local detections');
-      setHasUnsavedChanges(true);
+      setHasRunDetection(true);
+      if (newLocalDetections.length > 0) {
+        setHasUnsavedChanges(true);
+      }
     } catch (e) {
       console.error('[Detection] Detection failed:', e);
       setDetectingPage(null);
@@ -341,16 +366,15 @@ export function FileReviewPage() {
     // Check if it's a local detection
     const localDetection = localDetections.find(d => d.id === selectedDetectionId);
     if (localDetection) {
-      setLocalDetections(prev => prev.map(d =>
-        d.id === selectedDetectionId
-          ? { ...d, status: 'approved', exemption_code: toolbarExemptionCode, comment: toolbarComment || null }
-          : d
-      ));
+      setLocalDetections(prev => approveDetection(prev, selectedDetectionId, toolbarExemptionCode, toolbarComment || null));
+      setHasUnsavedChanges(true);
+    } else {
+      // Server-side detection - update locally (saved when Save is clicked)
+      setModifiedServerDetections(prev => approveDetection(prev, selectedDetectionId, toolbarExemptionCode, toolbarComment || null));
+      setHasModifications(true);
     }
-    // Note: Server detections are not handled here since they're already saved
 
     setSelectedDetectionId(null);
-    setHasUnsavedChanges(true);
   };
 
   // Handle reject from toolbar
@@ -361,10 +385,14 @@ export function FileReviewPage() {
     const localDetection = localDetections.find(d => d.id === selectedDetectionId);
     if (localDetection) {
       setLocalDetections(prev => prev.filter(d => d.id !== selectedDetectionId));
+      setHasUnsavedChanges(true);
+    } else {
+      // Server-side detection - mark as rejected locally (saved when Save is clicked)
+      setModifiedServerDetections(prev => rejectDetection(prev, selectedDetectionId));
+      setHasModifications(true);
     }
 
     setSelectedDetectionId(null);
-    setHasUnsavedChanges(true);
   };
 
   // Deselect when clicking elsewhere
@@ -373,6 +401,52 @@ export function FileReviewPage() {
     if (e.target === e.target.getStage() || e.target.getClassName() === 'Image') {
       setSelectedDetectionId(null);
     }
+  };
+
+  // Attach transformer to selected shape
+  useEffect(() => {
+    if (selectedDetectionId && transformerRef.current) {
+      const node = shapeRefs.current.get(selectedDetectionId);
+      if (node) {
+        transformerRef.current.nodes([node]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
+    } else if (transformerRef.current) {
+      transformerRef.current.nodes([]);
+    }
+  }, [selectedDetectionId]);
+
+  // Handle drag end for server-side detections
+  const handleDragEnd = (detectionId: string, e: Konva.KonvaEventObject<DragEvent>) => {
+    const node = e.target;
+    const newX = node.x() / dimensions.width;
+    const newY = node.y() / dimensions.height;
+    const detection = modifiedServerDetections.find(d => d.id === detectionId);
+    if (!detection) return;
+
+    // Update locally (saved when Save is clicked)
+    setModifiedServerDetections(prev => updateDetectionPosition(prev, detectionId, newX, newY));
+    setHasModifications(true);
+  };
+
+  // Handle transform end (resize) for server-side detections
+  const handleTransformEnd = (detectionId: string, e: Konva.KonvaEventObject<Event>) => {
+    const node = e.target as Konva.Rect;
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+
+    // Reset scale and apply to width/height
+    node.scaleX(1);
+    node.scaleY(1);
+
+    const newX = node.x() / dimensions.width;
+    const newY = node.y() / dimensions.height;
+    const newWidth = (node.width() * scaleX) / dimensions.width;
+    const newHeight = (node.height() * scaleY) / dimensions.height;
+
+    // Update locally (saved when Save is clicked)
+    setModifiedServerDetections(prev => updateDetectionSize(prev, detectionId, newX, newY, newWidth, newHeight));
+    setHasModifications(true);
   };
 
   const goBackToRequest = () => {
@@ -399,9 +473,54 @@ export function FileReviewPage() {
   };
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showApproveAllConfirm, setShowApproveAllConfirm] = useState(false);
+  const [showRejectAllConfirm, setShowRejectAllConfirm] = useState(false);
 
-  const handleCancel = async () => {
-    if (hasUnsavedChanges) {
+  // Get pending detections for current page
+  const getPendingOnCurrentPage = () => {
+    const serverPending = getPendingOnPage(modifiedServerDetections, currentPage);
+    const localPending = getPendingOnPage(localDetections, currentPage);
+    return { serverPending, localPending };
+  };
+
+  const handleApproveAllOnPage = () => {
+    const { serverPending, localPending } = getPendingOnCurrentPage();
+
+    // Approve local detections
+    if (localPending.length > 0) {
+      setLocalDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode));
+      setHasUnsavedChanges(true);
+    }
+
+    // Approve server detections locally (saved when Save is clicked)
+    if (serverPending.length > 0) {
+      setModifiedServerDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode));
+      setHasModifications(true);
+    }
+
+    setShowApproveAllConfirm(false);
+  };
+
+  const handleRejectAllOnPage = () => {
+    const { serverPending, localPending } = getPendingOnCurrentPage();
+
+    // Reject local detections (remove them)
+    if (localPending.length > 0) {
+      setLocalDetections(prev => filterRejectedLocalOnPage(prev, currentPage));
+      setHasUnsavedChanges(true);
+    }
+
+    // Reject server detections locally (saved when Save is clicked)
+    if (serverPending.length > 0) {
+      setModifiedServerDetections(prev => rejectAllPendingOnPage(prev, currentPage));
+      setHasModifications(true);
+    }
+
+    setShowRejectAllConfirm(false);
+  };
+
+  const handleCancel = () => {
+    if (hasUnsavedChanges || hasModifications) {
       setShowCancelConfirm(true);
     } else {
       goBackToRequest();
@@ -428,11 +547,31 @@ export function FileReviewPage() {
         });
       }
 
-      // Clear local detections and navigate back
+      // Sync modified server detections - find those that changed
+      const modifiedList = getModifiedDetections(modifiedServerDetections, originalServerDetections);
+      for (const { detection: modified } of modifiedList) {
+        if (modified.status === 'rejected') {
+          // For rejected, use deleteDetection which marks as rejected
+          await deleteDetection(modified.id);
+        } else {
+          // For other changes, use updateDetection
+          await updateDetection(modified.id, {
+            status: modified.status ?? undefined,
+            bbox_x: modified.bbox_x ?? undefined,
+            bbox_y: modified.bbox_y ?? undefined,
+            bbox_width: modified.bbox_width ?? undefined,
+            bbox_height: modified.bbox_height ?? undefined,
+            exemption_code: modified.exemption_code ?? undefined,
+            comment: modified.comment ?? undefined,
+          });
+        }
+      }
+
+      // Clear local state and navigate back
       setLocalDetections([]);
       setHasUnsavedChanges(false);
-      setModalMessage('Changes saved successfully');
-      setTimeout(() => goBackToRequest(), 1000);
+      setHasModifications(false);
+      goBackToRequest();
     } catch (e) {
       console.error('Failed to save:', e);
       setModalMessage('Failed to save changes');
@@ -510,7 +649,10 @@ export function FileReviewPage() {
     setDrawRect(null);
   };
 
-  const showDetectionPrompt = detections.length === 0 && localDetections.length === 0 && !isLoading && detectingPage === null;
+  const noDetectionsPresent = modifiedServerDetections.filter(d => d.status !== 'rejected').length === 0 && localDetections.length === 0 && !isLoading && detectingPage === null;
+  const showRunDetectionOnly = noDetectionsPresent && !hasRunDetection;
+  const showMarkComplete = noDetectionsPresent && hasRunDetection;
+  const showDetectionPrompt = noDetectionsPresent;
 
   return (
     <div className="fixed inset-0 bg-[#18181F] z-50 flex flex-col">
@@ -587,6 +729,55 @@ export function FileReviewPage() {
                     width={dimensions.width}
                     height={dimensions.height}
                   />
+                  {/* Render server-side (saved) detections - use modifiedServerDetections for local changes */}
+                  {modifiedServerDetections
+                    .filter((d) => d.status !== 'rejected' && (d.page_number == null || d.page_number === currentPage))
+                    .map((detection) => {
+                      const isPending = detection.status === 'pending';
+                      const isSelected = selectedDetectionId === detection.id;
+                      const hasComment = !!detection.comment;
+                      const rectX = (detection.bbox_x ?? 0) * dimensions.width;
+                      const rectY = (detection.bbox_y ?? 0) * dimensions.height;
+                      const rectW = (detection.bbox_width ?? 0) * dimensions.width;
+                      const rectH = (detection.bbox_height ?? 0) * dimensions.height;
+                      return (
+                        <Group key={detection.id} listening={true}>
+                          <Rect
+                            ref={(node) => {
+                              if (node) {
+                                shapeRefs.current.set(detection.id, node);
+                              } else {
+                                shapeRefs.current.delete(detection.id);
+                              }
+                            }}
+                            x={rectX}
+                            y={rectY}
+                            width={rectW}
+                            height={rectH}
+                            stroke={isSelected ? '#3B82F6' : isPending ? '#FFA500' : '#000000'}
+                            strokeWidth={isSelected ? 3 : 2}
+                            dash={isPending && !isSelected ? [4, 2] : undefined}
+                            fill={isSelected ? 'rgba(59, 130, 246, 0.2)' : isPending ? 'rgba(255, 165, 0, 0.15)' : 'rgba(0, 0, 0, 0.3)'}
+                            listening={true}
+                            draggable={true}
+                            onClick={() => handleDetectionClick(detection.id, detection.detection_type, detection.status, detection.exemption_code, detection.comment)}
+                            onTap={() => handleDetectionClick(detection.id, detection.detection_type, detection.status, detection.exemption_code, detection.comment)}
+                            onDragEnd={(e) => handleDragEnd(detection.id, e)}
+                            onTransformEnd={(e) => handleTransformEnd(detection.id, e)}
+                          />
+                          {hasComment && (
+                            <Circle
+                              x={rectX + rectW - 6}
+                              y={rectY + 6}
+                              radius={5}
+                              fill="#60A5FA"
+                              stroke="#1E40AF"
+                              strokeWidth={1}
+                            />
+                          )}
+                        </Group>
+                      );
+                    })}
                   {/* Render local (unsaved) detections */}
                   {localDetections
                     .filter((d) => d.page_number == null || d.page_number === currentPage)
@@ -638,26 +829,45 @@ export function FileReviewPage() {
                       fill="rgba(0, 0, 0, 0.15)"
                     />
                   )}
+                  {/* Transformer for resize */}
+                  <Transformer
+                    ref={transformerRef}
+                    boundBoxFunc={(oldBox, newBox) => {
+                      // Limit minimum size
+                      if (newBox.width < 10 || newBox.height < 10) {
+                        return oldBox;
+                      }
+                      return newBox;
+                    }}
+                  />
                 </Layer>
               </Stage>
             </div>
 
-            {/* Run Detection Prompt Overlay */}
-            {showDetectionPrompt && (
+            {/* Run Detection Prompt Overlay - before detection has run */}
+            {showRunDetectionOnly && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div className="flex flex-col gap-4">
-                  <button
-                    onClick={handleDetect}
-                    className="text-white text-lg font-bold px-8 py-4 rounded-xl border-0 cursor-pointer hover:opacity-90 transition-opacity"
-                    style={{ backgroundColor: '#B5594C' }}
-                  >
-                    Run Detection
-                  </button>
+                <button
+                  onClick={handleDetect}
+                  className="text-white text-lg font-bold px-8 py-4 rounded-xl border-0 cursor-pointer hover:opacity-90 transition-opacity"
+                  style={{ backgroundColor: '#B5594C' }}
+                >
+                  Run Detection
+                </button>
+              </div>
+            )}
+
+            {/* Mark Complete Overlay - after detection has run with no remaining detections */}
+            {showMarkComplete && (
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <div className="flex flex-col gap-4 items-center">
+                  <p className="text-white text-lg">No redactions to apply</p>
                   <button
                     onClick={handleMarkNoRedactionsNeeded}
-                    className="text-gray-300 text-sm px-6 py-2 rounded-lg border border-gray-500 cursor-pointer hover:bg-gray-700 transition-colors bg-transparent"
+                    className="text-white text-lg font-bold px-8 py-4 rounded-xl border-0 cursor-pointer hover:opacity-90 transition-opacity"
+                    style={{ backgroundColor: '#8FB8A0' }}
                   >
-                    No Redactions Needed
+                    Mark Complete
                   </button>
                 </div>
               </div>
@@ -689,52 +899,31 @@ export function FileReviewPage() {
 
             {/* Floating Toolbar for selected detection */}
             {selectedDetectionId && (() => {
-              const selected = localDetections.find(d => d.id === selectedDetectionId);
+              // Find selected in local or modified server detections
+              const localSelected = localDetections.find(d => d.id === selectedDetectionId);
+              const serverSelected = modifiedServerDetections.find(d => d.id === selectedDetectionId);
+              const selected = localSelected || serverSelected;
               if (!selected) return null;
 
               // Position toolbar below the detection
-              const toolbarX = selected.bbox_x * dimensions.width;
-              const toolbarY = (selected.bbox_y + selected.bbox_height) * dimensions.height + 8;
+              const toolbarPos = calculateToolbarPosition(
+                selected.bbox_x ?? 0,
+                selected.bbox_y ?? 0,
+                selected.bbox_height ?? 0,
+                dimensions.width,
+                dimensions.height
+              );
 
               return (
-                <div
-                  className="absolute bg-[#252530] rounded-lg shadow-xl p-3 flex items-center gap-2 z-50"
-                  style={{
-                    left: Math.max(8, Math.min(toolbarX, dimensions.width - 320)),
-                    top: Math.min(toolbarY, dimensions.height - 60),
-                  }}
-                >
-                  <select
-                    value={toolbarExemptionCode}
-                    onChange={(e) => setToolbarExemptionCode(e.target.value as ExemptionCode)}
-                    className="bg-gray-700 text-white text-sm rounded px-2 py-1.5 border-0 outline-none cursor-pointer"
-                  >
-                    {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
-                      <option key={code} value={code}>{label}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    placeholder="Add note..."
-                    value={toolbarComment}
-                    onChange={(e) => setToolbarComment(e.target.value)}
-                    className="bg-gray-700 text-white text-sm rounded px-2 py-1.5 w-28 border-0 outline-none placeholder-gray-400"
-                  />
-                  <button
-                    onClick={handleToolbarApprove}
-                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                    title="Approve"
-                  >
-                    ✓
-                  </button>
-                  <button
-                    onClick={handleToolbarReject}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-                    title="Reject"
-                  >
-                    ✗
-                  </button>
-                </div>
+                <DetectionToolbar
+                  position={toolbarPos}
+                  exemptionCode={toolbarExemptionCode}
+                  comment={toolbarComment}
+                  onExemptionCodeChange={setToolbarExemptionCode}
+                  onCommentChange={setToolbarComment}
+                  onApprove={handleToolbarApprove}
+                  onReject={handleToolbarReject}
+                />
               );
             })()}
           </>
@@ -743,27 +932,57 @@ export function FileReviewPage() {
         )}
       </div>
 
-      {/* PDF Navigation */}
-      {totalPages > 1 && (
+      {/* Page Actions & Navigation */}
+      {!showDetectionPrompt && (
         <div className="bg-[#252530] py-3.5 flex justify-center items-center gap-4">
-          <button
-            onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage <= 1}
-            className="px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
-          >
-            Previous
-          </button>
-          <span className="text-gray-400 text-sm">
-            Page <span className="font-semibold text-white">{currentPage}</span> of{' '}
-            <span className="font-semibold text-white">{totalPages}</span>
-          </span>
-          <button
-            onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage >= totalPages}
-            className="px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
-          >
-            Next
-          </button>
+          {/* Bulk actions for pending detections on current page */}
+          {(() => {
+            const { serverPending, localPending } = getPendingOnCurrentPage();
+            const pendingCount = serverPending.length + localPending.length;
+            return (
+              <>
+                <button
+                  onClick={() => setShowApproveAllConfirm(true)}
+                  disabled={pendingCount === 0}
+                  className="px-3 py-1.5 bg-green-600 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-green-700"
+                >
+                  Approve Remaining ({pendingCount})
+                </button>
+                <button
+                  onClick={() => setShowRejectAllConfirm(true)}
+                  disabled={pendingCount === 0}
+                  className="px-3 py-1.5 bg-red-600 text-white text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-700"
+                >
+                  Reject Remaining ({pendingCount})
+                </button>
+              </>
+            );
+          })()}
+
+          {/* Page navigation */}
+          {totalPages > 1 && (
+            <>
+              <div className="w-px h-6 bg-gray-600 mx-2" />
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className="px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="text-gray-400 text-sm">
+                Page <span className="font-semibold text-white">{currentPage}</span> of{' '}
+                <span className="font-semibold text-white">{totalPages}</span>
+              </span>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages}
+                className="px-4 py-2 bg-gray-700 text-white rounded disabled:opacity-50"
+              >
+                Next
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -805,6 +1024,58 @@ export function FileReviewPage() {
                 style={{ backgroundColor: '#B5594C', color: 'white' }}
               >
                 Yes, Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Remaining Confirmation Modal */}
+      {showApproveAllConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+          <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
+            <h3 className="text-white font-semibold text-lg mb-2">Approve Remaining on Page {currentPage}?</h3>
+            <p className="text-gray-400 mb-6">
+              This will approve the {getPendingOnCurrentPage().serverPending.length + getPendingOnCurrentPage().localPending.length} remaining pending detection(s) on this page with exemption code "{toolbarExemptionCode}".
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowApproveAllConfirm(false)}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-gray-600 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApproveAllOnPage}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700"
+              >
+                Approve Remaining
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Remaining Confirmation Modal */}
+      {showRejectAllConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+          <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
+            <h3 className="text-white font-semibold text-lg mb-2">Reject Remaining on Page {currentPage}?</h3>
+            <p className="text-gray-400 mb-6">
+              This will reject and remove the {getPendingOnCurrentPage().serverPending.length + getPendingOnCurrentPage().localPending.length} remaining pending detection(s) on this page.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRejectAllConfirm(false)}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-gray-600 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectAllOnPage}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700"
+              >
+                Reject Remaining
               </button>
             </div>
           </div>

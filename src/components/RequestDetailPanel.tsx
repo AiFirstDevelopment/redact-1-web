@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRequestStore } from '../stores/requestStore';
 import { api } from '../services/api';
-import type { Request, EvidenceFile } from '../types';
+import type { Request, EvidenceFile, User, AuditLog } from '../types';
 
 interface RequestDetailPanelProps {
   request: Request;
@@ -17,6 +17,10 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editingTitle, setEditingTitle] = useState(request.title || '');
+  const [users, setUsers] = useState<User[]>([]);
+  const [isAssigning, setIsAssigning] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [showAuditLog, setShowAuditLog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -38,6 +42,44 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   useEffect(() => {
     fetchFiles(request.id);
   }, [request.id, fetchFiles]);
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const { users } = await api.listUsers();
+        setUsers(users);
+      } catch (err) {
+        console.error('Failed to load users:', err);
+      }
+    };
+    loadUsers();
+  }, []);
+
+  const handleAssignmentChange = async (userId: string) => {
+    setIsAssigning(true);
+    try {
+      await api.updateRequest(request.id, { created_by: userId });
+      onRequestUpdated?.();
+      fetchAuditLogs(); // Refresh audit log after assignment change
+    } catch (err) {
+      console.error('Failed to assign request:', err);
+    } finally {
+      setIsAssigning(false);
+    }
+  };
+
+  const fetchAuditLogs = async () => {
+    try {
+      const { audit_logs } = await api.getRequestAuditLogs(request.id);
+      setAuditLogs(audit_logs);
+    } catch (err) {
+      console.error('Failed to fetch audit logs:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchAuditLogs();
+  }, [request.id]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -182,10 +224,81 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
               </p>
             </div>
           </div>
+          <div className="mt-4">
+            <span className="text-gray-500 text-sm">Assigned To:</span>
+            <select
+              value={request.created_by}
+              onChange={(e) => handleAssignmentChange(e.target.value)}
+              disabled={isAssigning}
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name} ({user.role})
+                </option>
+              ))}
+            </select>
+          </div>
           {request.notes && (
             <div className="mt-4">
               <span className="text-gray-500 text-sm">Notes:</span>
               <p className="mt-1 text-sm">{request.notes}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Audit Trail Section */}
+        <div className="bg-white border rounded-lg p-4 mb-4">
+          <button
+            onClick={() => setShowAuditLog(!showAuditLog)}
+            className="flex items-center justify-between w-full text-left"
+          >
+            <h4 className="font-semibold">Activity Log</h4>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${showAuditLog ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showAuditLog && (
+            <div className="mt-3 space-y-2 max-h-48 overflow-auto">
+              {auditLogs.length === 0 ? (
+                <p className="text-gray-500 text-sm">No activity recorded yet.</p>
+              ) : (
+                auditLogs.map((log) => (
+                  <div key={log.id} className="text-sm border-l-2 border-gray-200 pl-3 py-1">
+                    <div className="flex justify-between items-start">
+                      <span className="font-medium text-gray-900">
+                        {log.user_name || 'System'}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {formatDate(log.created_at)}
+                      </span>
+                    </div>
+                    <p className="text-gray-600">
+                      {log.action.charAt(0).toUpperCase() + log.action.slice(1)} {log.entity_type}
+                      {log.details && (
+                        <span className="text-gray-400 ml-1">
+                          - {(() => {
+                            try {
+                              const details = JSON.parse(log.details);
+                              if (details.created_by) return `assigned to user`;
+                              if (details.status) return `status: ${details.status}`;
+                              if (details.title !== undefined) return `title updated`;
+                              return '';
+                            } catch {
+                              return log.details;
+                            }
+                          })()}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
@@ -262,7 +375,12 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
                             </span>
                           );
                         }
-                        return null;
+                        // No detections yet - file is new/unprocessed
+                        return (
+                          <span className="px-1.5 py-0.5 text-xs rounded bg-blue-500 text-white flex-shrink-0">
+                            New
+                          </span>
+                        );
                       })()}
                     </div>
                     <p className="text-xs text-gray-500">{formatFileSize(file.file_size)}</p>

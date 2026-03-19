@@ -10,7 +10,7 @@ interface DetectionState {
   error: string | null;
   fetchDetections: (fileId: string) => Promise<void>;
   detectFaces: (fileId: string, pageImageBlob?: Blob, pageNumber?: number) => Promise<void>;
-  updateDetection: (id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number }) => Promise<void>;
+  updateDetection: (id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number; exemption_code?: string; comment?: string }) => Promise<void>;
   deleteDetection: (id: string) => Promise<void>;
   selectDetection: (id: string | null) => void;
   createManualRedaction: (fileId: string, data: Partial<ManualRedaction>) => Promise<void>;
@@ -51,7 +51,7 @@ export const useDetectionStore = create<DetectionState>((set) => ({
     }
   },
 
-  updateDetection: async (id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number }) => {
+  updateDetection: async (id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number; exemption_code?: string; comment?: string }) => {
     try {
       const { detection } = await api.updateDetection(id, data);
       set((state) => ({

@@ -1,4 +1,4 @@
-import type { User, Request, EvidenceFile, Detection, ManualRedaction, LoginResponse } from '../types';
+import type { User, Request, EvidenceFile, Detection, ManualRedaction, LoginResponse, AuditLog } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev';
 
@@ -73,7 +73,7 @@ class ApiService {
     return this.fetch(`/api/requests/${id}`);
   }
 
-  async createRequest(data: Partial<Request>): Promise<{ request: Request }> {
+  async createRequest(data: Partial<Request> & { assign_to?: string }): Promise<{ request: Request }> {
     return this.fetch('/api/requests', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -85,6 +85,10 @@ class ApiService {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  }
+
+  async getRequestAuditLogs(requestId: string): Promise<{ audit_logs: AuditLog[] }> {
+    return this.fetch(`/api/requests/${requestId}/audit`);
   }
 
   // Files
@@ -176,7 +180,7 @@ class ApiService {
     });
   }
 
-  async updateDetection(id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number }): Promise<{ detection: Detection }> {
+  async updateDetection(id: string, data: { status?: string; bbox_x?: number; bbox_y?: number; bbox_width?: number; bbox_height?: number; exemption_code?: string; comment?: string }): Promise<{ detection: Detection }> {
     return this.fetch(`/api/detections/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),

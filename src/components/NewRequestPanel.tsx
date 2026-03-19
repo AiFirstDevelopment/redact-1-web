@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRequestStore } from '../stores/requestStore';
+import { useAuthStore } from '../stores/authStore';
+import { api } from '../services/api';
+import type { User } from '../types';
 
 interface NewRequestPanelProps {
   onClose: () => void;
@@ -8,12 +11,31 @@ interface NewRequestPanelProps {
 
 export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
   const { createRequest, isLoading } = useRequestStore();
+  const { user: currentUser } = useAuthStore();
   const [title, setTitle] = useState('');
   const [requestDate, setRequestDate] = useState(
     new Date().toISOString().split('T')[0]
   );
   const [notes, setNotes] = useState('');
+  const [assignTo, setAssignTo] = useState(currentUser?.id || '');
+  const [users, setUsers] = useState<User[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const { users } = await api.listUsers();
+        setUsers(users);
+        // Set default to current user if not already set
+        if (!assignTo && currentUser) {
+          setAssignTo(currentUser.id);
+        }
+      } catch (err) {
+        console.error('Failed to load users:', err);
+      }
+    };
+    loadUsers();
+  }, [currentUser]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,6 +46,7 @@ export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
         title: title.trim() || undefined,
         request_date: new Date(requestDate).getTime(),
         notes: notes.trim() || undefined,
+        assign_to: assignTo || undefined,
       });
       onCreated(request.id);
     } catch (e) {
@@ -81,6 +104,23 @@ export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
               onChange={(e) => setRequestDate(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Assign To
+            </label>
+            <select
+              value={assignTo}
+              onChange={(e) => setAssignTo(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name} ({user.role})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
