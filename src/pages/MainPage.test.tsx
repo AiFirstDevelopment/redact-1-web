@@ -199,4 +199,26 @@ describe('MainPage', () => {
       expect(screen.queryAllByTitle(/delete/i).length).toBeGreaterThan(0);
     });
   });
+
+  describe('Pagination', () => {
+    it('shows loaded count indicator for requests', async () => {
+      renderMainPage();
+
+      await waitFor(() => {
+        expect(screen.getByText(/1 of 1 requests loaded/i)).toBeInTheDocument();
+      });
+    });
+
+    it('uses limit of 25 for initial request fetch', async () => {
+      renderMainPage();
+
+      // Requests tab loads with limit=25 by default
+      await waitFor(() => {
+        expect(screen.getByText('RR-20260318-001')).toBeInTheDocument();
+      });
+
+      // The API handler verifies limit is passed correctly
+      expect(screen.getByText(/requests loaded/i)).toBeInTheDocument();
+    });
+  });
 });

@@ -4,11 +4,14 @@ import type { Request, EvidenceFile } from '../types';
 
 interface RequestState {
   requests: Request[];
+  total: number;
   currentRequest: Request | null;
   files: EvidenceFile[];
   isLoading: boolean;
+  isLoadingMore: boolean;
   error: string | null;
-  fetchRequests: (params?: { search?: string; assignee?: string }) => Promise<void>;
+  fetchRequests: (params?: { search?: string; assignee?: string; limit?: number }) => Promise<void>;
+  fetchMoreRequests: (params?: { search?: string; assignee?: string }) => Promise<void>;
   fetchRequest: (id: string) => Promise<void>;
   fetchFiles: (requestId: string) => Promise<void>;
   createRequest: (data: Partial<Request> & { assign_to?: string }) => Promise<Request>;
@@ -16,20 +19,42 @@ interface RequestState {
   deleteFile: (fileId: string) => Promise<void>;
 }
 
-export const useRequestStore = create<RequestState>((set) => ({
+export const useRequestStore = create<RequestState>((set, get) => ({
   requests: [],
+  total: 0,
   currentRequest: null,
   files: [],
   isLoading: false,
+  isLoadingMore: false,
   error: null,
 
-  fetchRequests: async (params?: { search?: string; assignee?: string }) => {
+  fetchRequests: async (params?: { search?: string; assignee?: string; limit?: number }) => {
     set({ isLoading: true, error: null });
     try {
-      const { requests } = await api.listRequests(params);
-      set({ requests, isLoading: false });
+      const { requests, total } = await api.listRequests({ ...params, limit: params?.limit ?? 25, offset: 0 });
+      set({ requests, total, isLoading: false });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to fetch requests', isLoading: false });
+    }
+  },
+
+  fetchMoreRequests: async (params?: { search?: string; assignee?: string }) => {
+    const { requests: currentRequests, total, isLoadingMore } = get();
+    if (isLoadingMore || currentRequests.length >= total) return;
+
+    set({ isLoadingMore: true });
+    try {
+      const { requests: newRequests } = await api.listRequests({
+        ...params,
+        limit: 25,
+        offset: currentRequests.length,
+      });
+      set((state) => ({
+        requests: [...state.requests, ...newRequests],
+        isLoadingMore: false,
+      }));
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : 'Failed to fetch more requests', isLoadingMore: false });
     }
   },
 
@@ -57,7 +82,7 @@ export const useRequestStore = create<RequestState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const { request } = await api.createRequest(data);
-      set((state) => ({ requests: [request, ...state.requests], isLoading: false }));
+      set((state) => ({ requests: [request, ...state.requests], total: state.total + 1, isLoading: false }));
       return request;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to create request', isLoading: false });

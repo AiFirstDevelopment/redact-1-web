@@ -65,10 +65,12 @@ class ApiService {
   }
 
   // Requests
-  async listRequests(params?: { search?: string; assignee?: string }): Promise<{ requests: Request[] }> {
+  async listRequests(params?: { search?: string; assignee?: string; limit?: number; offset?: number }): Promise<{ requests: Request[]; total: number; limit: number; offset: number }> {
     const searchParams = new URLSearchParams();
     if (params?.search) searchParams.set('search', params.search);
     if (params?.assignee) searchParams.set('assignee', params.assignee);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
     const query = searchParams.toString();
     return this.fetch(`/api/requests${query ? `?${query}` : ''}`);
   }
@@ -209,9 +211,11 @@ class ApiService {
   }
 
   // Archived requests
-  async listArchivedRequests(params?: { search?: string }): Promise<{ requests: Request[] }> {
+  async listArchivedRequests(params?: { search?: string; limit?: number; offset?: number }): Promise<{ requests: Request[]; total: number; limit: number; offset: number }> {
     const searchParams = new URLSearchParams();
     if (params?.search) searchParams.set('search', params.search);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
     const query = searchParams.toString();
     return this.fetch(`/api/requests/archived${query ? `?${query}` : ''}`);
   }

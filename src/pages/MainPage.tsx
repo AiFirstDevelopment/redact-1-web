@@ -19,13 +19,15 @@ export function MainPage() {
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [archivedRequests, setArchivedRequests] = useState<Request[]>([]);
+  const [archivedTotal, setArchivedTotal] = useState(0);
   const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedLoadingMore, setArchivedLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [archivedSearchTerm, setArchivedSearchTerm] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
   const debounceRef = useRef<NodeJS.Timeout>();
 
-  const { requests, isLoading, fetchRequests } = useRequestStore();
+  const { requests, total, isLoading, isLoadingMore, fetchRequests, fetchMoreRequests } = useRequestStore();
 
   // Debounced search for active requests
   useEffect(() => {
@@ -55,17 +57,37 @@ export function MainPage() {
     }
   }, [searchParams, requests, setSearchParams]);
 
-  const fetchArchivedRequests = useCallback(async (search?: string) => {
-    setArchivedLoading(true);
-    try {
-      const { requests } = await api.listArchivedRequests(search ? { search } : undefined);
-      setArchivedRequests(requests);
-    } catch (e) {
-      console.error('Failed to fetch archived requests:', e);
-    } finally {
-      setArchivedLoading(false);
+  const fetchArchivedRequests = useCallback(async (search?: string, reset = true) => {
+    if (reset) {
+      setArchivedLoading(true);
+      try {
+        const { requests, total } = await api.listArchivedRequests({ search, offset: 0, limit: 25 });
+        setArchivedRequests(requests);
+        setArchivedTotal(total);
+      } catch (e) {
+        console.error('Failed to fetch archived requests:', e);
+      } finally {
+        setArchivedLoading(false);
+      }
     }
   }, []);
+
+  const fetchMoreArchivedRequests = useCallback(async () => {
+    if (archivedLoadingMore || archivedRequests.length >= archivedTotal) return;
+    setArchivedLoadingMore(true);
+    try {
+      const { requests: newRequests } = await api.listArchivedRequests({
+        search: archivedSearchTerm || undefined,
+        offset: archivedRequests.length,
+        limit: 25,
+      });
+      setArchivedRequests(prev => [...prev, ...newRequests]);
+    } catch (e) {
+      console.error('Failed to fetch more archived requests:', e);
+    } finally {
+      setArchivedLoadingMore(false);
+    }
+  }, [archivedLoadingMore, archivedRequests.length, archivedTotal, archivedSearchTerm]);
 
   // Debounced search for archived requests
   useEffect(() => {
@@ -174,6 +196,13 @@ export function MainPage() {
     setAssigneeFilter(assignee);
   };
 
+  const handleLoadMore = useCallback(() => {
+    const params: { search?: string; assignee?: string } = {};
+    if (searchTerm) params.search = searchTerm;
+    if (assigneeFilter) params.assignee = assigneeFilter;
+    fetchMoreRequests(Object.keys(params).length > 0 ? params : undefined);
+  }, [fetchMoreRequests, searchTerm, assigneeFilter]);
+
   const renderRightPanel = () => {
     if (rightPanel === 'detail' && selectedRequest) {
       return (
@@ -217,6 +246,9 @@ export function MainPage() {
             onSearchChange={handleSearchChange}
             assigneeFilter={assigneeFilter}
             onAssigneeFilterChange={handleAssigneeFilterChange}
+            total={total}
+            onLoadMore={handleLoadMore}
+            isLoadingMore={isLoadingMore}
           />
         );
       case 'archived':
@@ -235,6 +267,9 @@ export function MainPage() {
             onSearchChange={handleArchivedSearchChange}
             assigneeFilter=""
             onAssigneeFilterChange={() => {}}
+            total={archivedTotal}
+            onLoadMore={fetchMoreArchivedRequests}
+            isLoadingMore={archivedLoadingMore}
           />
         );
       case 'users':

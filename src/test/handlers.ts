@@ -101,12 +101,18 @@ export const handlers = [
   }),
 
   // Requests
-  http.get(`${API_BASE}/api/requests`, () => {
-    return HttpResponse.json({ requests: [mockRequest] });
+  http.get(`${API_BASE}/api/requests`, ({ request }) => {
+    const url = new URL(request.url);
+    const limit = parseInt(url.searchParams.get('limit') || '25', 10);
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+    return HttpResponse.json({ requests: [mockRequest], total: 1, limit, offset });
   }),
 
-  http.get(`${API_BASE}/api/requests/archived`, () => {
-    return HttpResponse.json({ requests: [] });
+  http.get(`${API_BASE}/api/requests/archived`, ({ request }) => {
+    const url = new URL(request.url);
+    const limit = parseInt(url.searchParams.get('limit') || '25', 10);
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+    return HttpResponse.json({ requests: [], total: 0, limit, offset });
   }),
 
   http.get(`${API_BASE}/api/requests/:id`, ({ params }) => {

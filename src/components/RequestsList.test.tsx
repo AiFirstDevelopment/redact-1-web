@@ -6,6 +6,18 @@ import { http, HttpResponse } from 'msw';
 import { RequestsList } from './RequestsList';
 import { mockRequest } from '../test/handlers';
 import { server } from '../test/setup';
+import React from 'react';
+
+// Mock react-window to render all items without virtualization
+vi.mock('react-window', () => ({
+  FixedSizeList: ({ children, itemCount }: { children: (props: { index: number; style: React.CSSProperties }) => React.ReactNode; itemCount: number }) => (
+    <div data-testid="virtual-list">
+      {Array.from({ length: itemCount }, (_, index) =>
+        children({ index, style: {} })
+      )}
+    </div>
+  ),
+}));
 
 const API_BASE = 'https://redact-1-worker.joelstevick.workers.dev';
 
@@ -22,6 +34,9 @@ const renderRequestsList = (props = {}) => {
     onSearchChange: vi.fn(),
     assigneeFilter: '',
     onAssigneeFilterChange: vi.fn(),
+    total: 1,
+    onLoadMore: vi.fn(),
+    isLoadingMore: false,
     ...props,
   };
 
@@ -498,8 +513,11 @@ describe('RequestsList', () => {
       const onAssigneeFilterChange = vi.fn();
       renderRequestsList({ onAssigneeFilterChange });
 
+      // Wait for users to load in the dropdown
       await waitFor(() => {
-        expect(screen.getByText('All Assignees')).toBeInTheDocument();
+        const allAssigneesOption = screen.getByText('All Assignees');
+        const filterSelect = allAssigneesOption.closest('select') as HTMLSelectElement;
+        expect(filterSelect?.querySelector('option[value="user-1"]')).toBeInTheDocument();
       });
 
       // Find the filter dropdown specifically (the one with "All Assignees")

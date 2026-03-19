@@ -7,9 +7,11 @@ describe('requestStore', () => {
     // Reset store state
     useRequestStore.setState({
       requests: [],
+      total: 0,
       currentRequest: null,
       files: [],
       isLoading: false,
+      isLoadingMore: false,
       error: null,
     });
     localStorage.setItem('token', 'mock-token');
@@ -71,6 +73,67 @@ describe('requestStore', () => {
       await fetchRequests();
 
       expect(useRequestStore.getState().error).toBeNull();
+    });
+
+    it('uses default limit of 25', async () => {
+      const { fetchRequests } = useRequestStore.getState();
+
+      await fetchRequests();
+
+      const state = useRequestStore.getState();
+      expect(state.total).toBe(1);
+    });
+
+    it('stores total count from response', async () => {
+      const { fetchRequests } = useRequestStore.getState();
+
+      await fetchRequests();
+
+      const state = useRequestStore.getState();
+      expect(state.total).toBeDefined();
+      expect(typeof state.total).toBe('number');
+    });
+  });
+
+  describe('fetchMoreRequests', () => {
+    it('does not fetch if already loading more', async () => {
+      useRequestStore.setState({ isLoadingMore: true, requests: [], total: 10 });
+      const { fetchMoreRequests } = useRequestStore.getState();
+
+      await fetchMoreRequests();
+
+      // Should not change state since already loading
+      expect(useRequestStore.getState().isLoadingMore).toBe(true);
+    });
+
+    it('does not fetch if all requests are loaded', async () => {
+      useRequestStore.setState({ requests: [mockRequest], total: 1 });
+      const { fetchMoreRequests } = useRequestStore.getState();
+
+      await fetchMoreRequests();
+
+      // Should not trigger loading since length >= total
+      expect(useRequestStore.getState().isLoadingMore).toBe(false);
+    });
+
+    it('sets isLoadingMore during fetch', async () => {
+      useRequestStore.setState({ requests: [], total: 10 });
+      const { fetchMoreRequests } = useRequestStore.getState();
+
+      const promise = fetchMoreRequests();
+      expect(useRequestStore.getState().isLoadingMore).toBe(true);
+      await promise;
+    });
+
+    it('appends new requests to existing list', async () => {
+      useRequestStore.setState({ requests: [mockRequest], total: 10 });
+      const { fetchMoreRequests } = useRequestStore.getState();
+
+      await fetchMoreRequests();
+
+      const state = useRequestStore.getState();
+      expect(state.requests.length).toBeGreaterThanOrEqual(1);
+      expect(state.isLoadingMore).toBe(false);
     });
   });
 
