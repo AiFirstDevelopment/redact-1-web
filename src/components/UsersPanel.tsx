@@ -105,7 +105,7 @@ export function UsersPanel() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 bg-pastel-blue min-h-full">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">Users</h2>
         <button
@@ -124,7 +124,7 @@ export function UsersPanel() {
 
       {/* Add/Edit Form */}
       {(showAddForm || editingUser) && (
-        <div className="bg-white border rounded-lg p-4 mb-6">
+        <div className="bg-card-white border rounded-lg p-4 mb-6 shadow-sm">
           <h3 className="font-semibold mb-4">
             {editingUser ? 'Edit User' : 'Add New User'}
           </h3>
@@ -207,7 +207,7 @@ export function UsersPanel() {
       ) : users.length === 0 ? (
         <div className="text-center py-8 text-gray-500">No users found.</div>
       ) : (
-        <div className="bg-white border rounded-lg overflow-hidden">
+        <div className="bg-card-white border rounded-lg overflow-hidden shadow-sm">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -225,7 +225,7 @@ export function UsersPanel() {
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-card-white divide-y divide-gray-200">
               {users.map((user) => (
                 <tr key={user.id}>
                   <td className="px-6 py-4 whitespace-nowrap">

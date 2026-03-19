@@ -149,7 +149,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   return (
     <div className="h-full flex flex-col relative">
       {/* Header */}
-      <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+      <div className="p-4 border-b flex justify-between items-center bg-card-white">
         <div>
           <h3 className="font-semibold text-blue-600">{request.request_number}</h3>
           <p className="text-sm text-gray-500">Request Details</p>
@@ -167,7 +167,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
         {/* Request Info */}
-        <div className="bg-white border rounded-lg p-4 mb-4">
+        <div className="bg-card-white border rounded-lg p-4 mb-4 shadow-sm">
           {isEditingTitle ? (
             <div className="flex items-center gap-2 mb-2">
               <input
@@ -248,7 +248,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
         </div>
 
         {/* Audit Trail Section */}
-        <div className="bg-white border rounded-lg p-4 mb-4">
+        <div className="bg-card-white border rounded-lg p-4 mb-4 shadow-sm">
           <button
             onClick={() => setShowAuditLog(!showAuditLog)}
             className="flex items-center justify-between w-full text-left"
@@ -304,7 +304,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
         </div>
 
         {/* Files Section */}
-        <div className="bg-white border rounded-lg p-4">
+        <div className="bg-card-white border rounded-lg p-4 shadow-sm">
           <div className="flex justify-between items-center mb-4">
             <h4 className="font-semibold">File</h4>
             {files.length === 0 && (

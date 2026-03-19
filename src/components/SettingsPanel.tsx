@@ -14,11 +14,11 @@ export function SettingsPanel() {
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="p-6 max-w-2xl mx-auto bg-pastel-blue min-h-full">
       <h2 className="text-2xl font-bold mb-6">Settings</h2>
 
       {/* Profile Section */}
-      <div className="bg-white border rounded-lg p-6 mb-6">
+      <div className="bg-card-white border rounded-lg p-6 mb-6 shadow-sm">
         <h3 className="font-semibold text-lg mb-4">Profile</h3>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -39,7 +39,7 @@ export function SettingsPanel() {
       </div>
 
       {/* Department Section */}
-      <div className="bg-white border rounded-lg p-6 mb-6">
+      <div className="bg-card-white border rounded-lg p-6 mb-6 shadow-sm">
         <h3 className="font-semibold text-lg mb-4">Department</h3>
         <div className="space-y-4">
           <div>
@@ -60,7 +60,7 @@ export function SettingsPanel() {
       </div>
 
       {/* Account Section */}
-      <div className="bg-white border rounded-lg p-6">
+      <div className="bg-card-white border rounded-lg p-6 shadow-sm">
         <h3 className="font-semibold text-lg mb-4">Account</h3>
         <button
           onClick={handleSignOut}

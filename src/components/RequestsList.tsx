@@ -278,7 +278,7 @@ export function RequestsList({
   };
 
   return (
-    <div className="p-6">
+    <div className="p-6 bg-pastel-blue min-h-full">
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">
@@ -317,7 +317,7 @@ export function RequestsList({
           {filteredRequests.map((request) => (
             <div
               key={request.id}
-              className={`bg-white rounded-lg border p-4 cursor-pointer transition-colors ${
+              className={`bg-card-white rounded-lg border p-4 cursor-pointer transition-colors shadow-sm ${
                 selectedId === request.id
                   ? 'border-blue-500 ring-2 ring-blue-200'
                   : 'border-gray-200 hover:border-gray-300'

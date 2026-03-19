@@ -508,13 +508,13 @@ export function FileReviewPage() {
 
     // Approve local detections
     if (localPending.length > 0) {
-      setLocalDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode));
+      setLocalDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode, toolbarComment || null));
       setHasUnsavedChanges(true);
     }
 
     // Approve server detections locally (saved when Save is clicked)
     if (serverPending.length > 0) {
-      setModifiedServerDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode));
+      setModifiedServerDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode, toolbarComment || null));
       setHasModifications(true);
     }
 
@@ -1088,9 +1088,14 @@ export function FileReviewPage() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
           <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
             <h3 className="text-white font-semibold text-lg mb-2">Approve Remaining on Page {currentPage}?</h3>
-            <p className="text-gray-400 mb-6">
+            <p className="text-gray-400 mb-4">
               This will approve the {getPendingOnCurrentPage().serverPending.length + getPendingOnCurrentPage().localPending.length} remaining pending detection(s) on this page with exemption code "{toolbarExemptionCode}".
             </p>
+            {toolbarComment && (
+              <p className="text-gray-400 mb-4 text-sm">
+                Comment: <span className="text-gray-300">"{toolbarComment}"</span>
+              </p>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={() => setShowApproveAllConfirm(false)}

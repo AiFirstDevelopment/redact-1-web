@@ -57,7 +57,7 @@ export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+      <div className="p-4 border-b flex justify-between items-center bg-card-white">
         <div>
           <h3 className="font-semibold">New Request</h3>
           <p className="text-sm text-gray-500">Create a new records request</p>

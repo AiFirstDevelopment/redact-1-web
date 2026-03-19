@@ -23,19 +23,19 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-pastel-mint shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold">Redact-1</h1>
+            <h1 className="text-xl font-bold text-white">Redact-1</h1>
             {agency && (
-              <span className="text-sm text-gray-500">{agency.name}</span>
+              <span className="text-sm text-white/90">{agency.name}</span>
             )}
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-gray-600">{user?.name}</span>
+            <span className="text-white">{user?.name}</span>
             <button
               onClick={logout}
-              className="text-gray-500 hover:text-gray-700 text-sm"
+              className="text-white/80 hover:text-white text-sm"
             >
               Sign Out
             </button>
@@ -44,7 +44,7 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
       </header>
 
       {/* Tabs */}
-      <div className="bg-white border-b">
+      <div className="bg-pastel-cream border-b">
         <div className="max-w-7xl mx-auto px-4">
           <nav className="flex gap-1">
             {tabs.map((tab) => {
@@ -55,8 +55,8 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
                   onClick={() => onTabChange(tab.id)}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                     activeTab === tab.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-blue-800 text-blue-900'
+                      : 'border-transparent text-gray-800 hover:text-gray-900'
                   }`}
                 >
                   {tab.label}
@@ -73,7 +73,7 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
           {children}
         </main>
         {rightPanel && (
-          <aside className="w-[500px] bg-white border-l shadow-lg overflow-auto">
+          <aside className="w-[500px] bg-pastel-peach border-l shadow-lg overflow-auto">
             {rightPanel}
           </aside>
         )}

@@ -668,6 +668,12 @@ describe('FileReviewPage', () => {
       expect(apiCalled).toBe(false);
     });
 
+    // Note: The toolbar comment being passed to approveAllPendingOnPage is tested
+    // at the unit level in detectionUtils.test.ts ('applies comment to all approved
+    // detections when provided'). Full integration testing of the comment flow requires
+    // canvas/Konva interaction to select a detection and show the toolbar, which is
+    // complex to simulate in JSDOM.
+
     it('does not call API when Reject Remaining is confirmed', async () => {
       let apiCalled = false;
       server.use(
