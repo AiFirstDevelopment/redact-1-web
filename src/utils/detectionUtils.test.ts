@@ -169,6 +169,40 @@ describe('detectionUtils', () => {
 
       expect(result[0].exemption_code).toBe('b6');
     });
+
+    it('applies comment to all approved detections when provided', () => {
+      const detections = [
+        { id: '1', status: 'pending', page_number: 1, exemption_code: null, comment: null },
+        { id: '2', status: 'pending', page_number: 1, exemption_code: null, comment: null },
+      ];
+
+      const result = approveAllPendingOnPage(detections, 1, 'b6', 'Bulk approval note');
+
+      expect(result[0].status).toBe('approved');
+      expect(result[0].comment).toBe('Bulk approval note');
+      expect(result[1].status).toBe('approved');
+      expect(result[1].comment).toBe('Bulk approval note');
+    });
+
+    it('sets comment to null when not provided', () => {
+      const detections = [
+        { id: '1', status: 'pending', page_number: 1, exemption_code: null, comment: null },
+      ];
+
+      const result = approveAllPendingOnPage(detections, 1, 'b6');
+
+      expect(result[0].comment).toBeNull();
+    });
+
+    it('sets comment to null when explicitly passed as null', () => {
+      const detections = [
+        { id: '1', status: 'pending', page_number: 1, exemption_code: null, comment: null },
+      ];
+
+      const result = approveAllPendingOnPage(detections, 1, 'b6', null);
+
+      expect(result[0].comment).toBeNull();
+    });
   });
 
   describe('rejectAllPendingOnPage', () => {
