@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { RequestsList } from '../components/RequestsList';
@@ -20,12 +20,26 @@ export function MainPage() {
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [archivedRequests, setArchivedRequests] = useState<Request[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [archivedSearchTerm, setArchivedSearchTerm] = useState('');
+  const [assigneeFilter, setAssigneeFilter] = useState('');
+  const debounceRef = useRef<NodeJS.Timeout>();
 
   const { requests, isLoading, fetchRequests } = useRequestStore();
 
+  // Debounced search for active requests
   useEffect(() => {
-    fetchRequests();
-  }, [fetchRequests]);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params: { search?: string; assignee?: string } = {};
+      if (searchTerm) params.search = searchTerm;
+      if (assigneeFilter) params.assignee = assigneeFilter;
+      fetchRequests(Object.keys(params).length > 0 ? params : undefined);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [fetchRequests, searchTerm, assigneeFilter]);
 
   // Auto-select request from URL param (when returning from file review)
   useEffect(() => {
@@ -41,23 +55,30 @@ export function MainPage() {
     }
   }, [searchParams, requests, setSearchParams]);
 
-  useEffect(() => {
-    if (activeTab === 'archived') {
-      fetchArchivedRequests();
-    }
-  }, [activeTab]);
-
-  const fetchArchivedRequests = async () => {
+  const fetchArchivedRequests = useCallback(async (search?: string) => {
     setArchivedLoading(true);
     try {
-      const { requests } = await api.listArchivedRequests();
+      const { requests } = await api.listArchivedRequests(search ? { search } : undefined);
       setArchivedRequests(requests);
     } catch (e) {
       console.error('Failed to fetch archived requests:', e);
     } finally {
       setArchivedLoading(false);
     }
-  };
+  }, []);
+
+  // Debounced search for archived requests
+  useEffect(() => {
+    if (activeTab === 'archived') {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        fetchArchivedRequests(archivedSearchTerm || undefined);
+      }, 300);
+      return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+      };
+    }
+  }, [activeTab, archivedSearchTerm, fetchArchivedRequests]);
 
   const handleSelectRequest = (request: Request) => {
     setSelectedRequest(request);
@@ -141,6 +162,18 @@ export function MainPage() {
     handleClosePanel();
   };
 
+  const handleSearchChange = (term: string) => {
+    setSearchTerm(term);
+  };
+
+  const handleArchivedSearchChange = (term: string) => {
+    setArchivedSearchTerm(term);
+  };
+
+  const handleAssigneeFilterChange = (assignee: string) => {
+    setAssigneeFilter(assignee);
+  };
+
   const renderRightPanel = () => {
     if (rightPanel === 'detail' && selectedRequest) {
       return (
@@ -174,7 +207,16 @@ export function MainPage() {
             onNewRequest={handleNewRequest}
             onArchive={handleArchive}
             onDelete={handleDelete}
-            onRequestUpdated={fetchRequests}
+            onRequestUpdated={() => {
+              const params: { search?: string; assignee?: string } = {};
+              if (searchTerm) params.search = searchTerm;
+              if (assigneeFilter) params.assignee = assigneeFilter;
+              fetchRequests(Object.keys(params).length > 0 ? params : undefined);
+            }}
+            searchTerm={searchTerm}
+            onSearchChange={handleSearchChange}
+            assigneeFilter={assigneeFilter}
+            onAssigneeFilterChange={handleAssigneeFilterChange}
           />
         );
       case 'archived':
@@ -187,8 +229,12 @@ export function MainPage() {
             onNewRequest={() => {}}
             onUnarchive={handleUnarchive}
             onDelete={handleDelete}
-            onRequestUpdated={fetchArchivedRequests}
+            onRequestUpdated={() => fetchArchivedRequests(archivedSearchTerm || undefined)}
             showArchived
+            searchTerm={archivedSearchTerm}
+            onSearchChange={handleArchivedSearchChange}
+            assigneeFilter=""
+            onAssigneeFilterChange={() => {}}
           />
         );
       case 'users':

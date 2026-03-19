@@ -8,7 +8,7 @@ interface RequestState {
   files: EvidenceFile[];
   isLoading: boolean;
   error: string | null;
-  fetchRequests: () => Promise<void>;
+  fetchRequests: (params?: { search?: string; assignee?: string }) => Promise<void>;
   fetchRequest: (id: string) => Promise<void>;
   fetchFiles: (requestId: string) => Promise<void>;
   createRequest: (data: Partial<Request> & { assign_to?: string }) => Promise<Request>;
@@ -23,10 +23,10 @@ export const useRequestStore = create<RequestState>((set) => ({
   isLoading: false,
   error: null,
 
-  fetchRequests: async () => {
+  fetchRequests: async (params?: { search?: string; assignee?: string }) => {
     set({ isLoading: true, error: null });
     try {
-      const { requests } = await api.listRequests();
+      const { requests } = await api.listRequests(params);
       set({ requests, isLoading: false });
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to fetch requests', isLoading: false });

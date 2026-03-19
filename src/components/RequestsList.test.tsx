@@ -18,6 +18,10 @@ const renderRequestsList = (props = {}) => {
     onNewRequest: vi.fn(),
     onArchive: vi.fn(),
     onDelete: vi.fn(),
+    searchTerm: '',
+    onSearchChange: vi.fn(),
+    assigneeFilter: '',
+    onAssigneeFilterChange: vi.fn(),
     ...props,
   };
 
@@ -95,19 +99,15 @@ describe('RequestsList', () => {
     expect(requestItem?.className).toContain('border-blue-500');
   });
 
-  it('filters requests by search term', async () => {
+  it('calls onSearchChange when search term is typed', async () => {
     const user = userEvent.setup();
-    const requests = [
-      mockRequest,
-      { ...mockRequest, id: 'req-2', request_number: 'RR-20260318-002', title: 'Another Request' },
-    ];
-    renderRequestsList({ requests });
+    const onSearchChange = vi.fn();
+    renderRequestsList({ onSearchChange });
 
     const searchInput = screen.getByPlaceholderText(/search requests/i);
-    await user.type(searchInput, 'Another');
+    await user.type(searchInput, 'a');
 
-    expect(screen.queryByText('Test Request')).not.toBeInTheDocument();
-    expect(screen.getByText('Another Request')).toBeInTheDocument();
+    expect(onSearchChange).toHaveBeenCalledWith('a');
   });
 
   it('shows archive button for each request', () => {
@@ -411,6 +411,128 @@ describe('RequestsList', () => {
       await waitFor(() => {
         const downloadBtn = screen.getByTitle(/complete review to enable download/i);
         expect(downloadBtn).toBeDisabled();
+      });
+    });
+  });
+
+  // ============================================
+  // Search Highlight Tests
+  // ============================================
+
+  describe('search highlight', () => {
+    it('highlights matching text in request number when search term matches', () => {
+      renderRequestsList({ searchTerm: '001' });
+
+      const highlight = screen.getByText('001');
+      expect(highlight.tagName).toBe('MARK');
+      expect(highlight.className).toContain('bg-yellow-300');
+    });
+
+    it('highlights matching text in title when search term matches', () => {
+      renderRequestsList({ searchTerm: 'Test' });
+
+      const highlight = screen.getByText('Test');
+      expect(highlight.tagName).toBe('MARK');
+      expect(highlight.className).toContain('bg-yellow-300');
+    });
+
+    it('highlights partial matches case-insensitively', () => {
+      renderRequestsList({ searchTerm: 'test' });
+
+      const highlight = screen.getByText('Test');
+      expect(highlight.tagName).toBe('MARK');
+    });
+
+    it('does not highlight when search term is empty', () => {
+      renderRequestsList({ searchTerm: '' });
+
+      const requestNumber = screen.getByText('RR-20260318-001');
+      expect(requestNumber.tagName).not.toBe('MARK');
+    });
+
+    it('does not highlight when search term does not match', () => {
+      renderRequestsList({ searchTerm: 'xyz' });
+
+      const requestNumber = screen.getByText('RR-20260318-001');
+      expect(requestNumber.tagName).not.toBe('MARK');
+    });
+
+    it('highlights multiple occurrences in the same text', () => {
+      const requestWithRepeatingText = {
+        ...mockRequest,
+        title: 'Test case for test',
+      };
+      renderRequestsList({ requests: [requestWithRepeatingText], searchTerm: 'test' });
+
+      const highlights = screen.getAllByText(/test/i).filter(el => el.tagName === 'MARK');
+      expect(highlights.length).toBe(2);
+    });
+  });
+
+  // ============================================
+  // Assignee Filter Tests
+  // ============================================
+
+  describe('assignee filter', () => {
+    it('renders assignee filter dropdown with All Assignees option', () => {
+      renderRequestsList();
+
+      expect(screen.getByText('All Assignees')).toBeInTheDocument();
+    });
+
+    it('populates assignee filter with users from API', async () => {
+      renderRequestsList();
+
+      await waitFor(() => {
+        // Find the filter dropdown by finding the one that contains "All Assignees"
+        const allAssigneesOption = screen.getByText('All Assignees');
+        const filterSelect = allAssigneesOption.closest('select');
+        expect(filterSelect).toBeInTheDocument();
+        // Check that user option exists in the filter
+        expect(filterSelect?.querySelector('option[value="user-1"]')).toBeInTheDocument();
+      });
+    });
+
+    it('calls onAssigneeFilterChange when assignee is selected', async () => {
+      const user = userEvent.setup();
+      const onAssigneeFilterChange = vi.fn();
+      renderRequestsList({ onAssigneeFilterChange });
+
+      await waitFor(() => {
+        expect(screen.getByText('All Assignees')).toBeInTheDocument();
+      });
+
+      // Find the filter dropdown specifically (the one with "All Assignees")
+      const allAssigneesOption = screen.getByText('All Assignees');
+      const filterSelect = allAssigneesOption.closest('select') as HTMLSelectElement;
+      await user.selectOptions(filterSelect, 'user-1');
+
+      expect(onAssigneeFilterChange).toHaveBeenCalledWith('user-1');
+    });
+
+    it('calls onAssigneeFilterChange with empty string when All Assignees selected', async () => {
+      const user = userEvent.setup();
+      const onAssigneeFilterChange = vi.fn();
+      renderRequestsList({ assigneeFilter: 'user-1', onAssigneeFilterChange });
+
+      await waitFor(() => {
+        expect(screen.getByText('All Assignees')).toBeInTheDocument();
+      });
+
+      const allAssigneesOption = screen.getByText('All Assignees');
+      const filterSelect = allAssigneesOption.closest('select') as HTMLSelectElement;
+      await user.selectOptions(filterSelect, '');
+
+      expect(onAssigneeFilterChange).toHaveBeenCalledWith('');
+    });
+
+    it('shows selected assignee in filter dropdown', async () => {
+      renderRequestsList({ assigneeFilter: 'user-1' });
+
+      await waitFor(() => {
+        const allAssigneesOption = screen.getByText('All Assignees');
+        const filterSelect = allAssigneesOption.closest('select') as HTMLSelectElement;
+        expect(filterSelect.value).toBe('user-1');
       });
     });
   });

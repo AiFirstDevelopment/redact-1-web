@@ -19,6 +19,10 @@ interface RequestsListProps {
   onDelete?: (id: string) => void;
   onRequestUpdated?: () => void;
   showArchived?: boolean;
+  searchTerm: string;
+  onSearchChange: (term: string) => void;
+  assigneeFilter: string;
+  onAssigneeFilterChange: (assignee: string) => void;
 }
 
 export function RequestsList({
@@ -32,8 +36,11 @@ export function RequestsList({
   onDelete,
   onRequestUpdated,
   showArchived = false,
+  searchTerm,
+  onSearchChange,
+  assigneeFilter,
+  onAssigneeFilterChange,
 }: RequestsListProps) {
-  const [searchTerm, setSearchTerm] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -224,11 +231,8 @@ export function RequestsList({
     }
   };
 
-  const filteredRequests = requests.filter(
-    (r) =>
-      r.request_number.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filtering is now done server-side
+  const filteredRequests = requests;
 
   const formatDate = (timestamp: number) => {
     // Handle timestamps in seconds vs milliseconds
@@ -243,6 +247,19 @@ export function RequestsList({
       completed: 'bg-green-100 text-green-800',
     };
     return colors[status as keyof typeof colors] || 'bg-gray-100 text-gray-800';
+  };
+
+  const highlightMatch = (text: string) => {
+    if (!searchTerm.trim()) return text;
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+    return parts.map((part, i) =>
+      regex.test(part) ? (
+        <mark key={i} className="bg-yellow-300 rounded px-0.5">{part}</mark>
+      ) : (
+        part
+      )
+    );
   };
 
   const handleDelete = (id: string) => {
@@ -294,15 +311,27 @@ export function RequestsList({
         )}
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
+      {/* Search and Filter */}
+      <div className="mb-4 flex gap-3">
         <input
           type="text"
           placeholder="Search requests..."
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        <select
+          value={assigneeFilter}
+          onChange={(e) => onAssigneeFilterChange(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        >
+          <option value="">All Assignees</option>
+          {users.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* List */}
@@ -328,7 +357,7 @@ export function RequestsList({
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="font-semibold text-blue-600">
-                      {request.request_number}
+                      {highlightMatch(request.request_number)}
                     </span>
                     <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(request.status)}`}>
                       {request.status.replace('_', ' ')}
@@ -385,7 +414,7 @@ export function RequestsList({
                       onClick={(e) => startEditingTitle(e, request)}
                       title="Click to edit title"
                     >
-                      {request.title || 'Add title...'}
+                      {request.title ? highlightMatch(request.title) : 'Add title...'}
                     </p>
                   )}
                   <p className="text-sm text-gray-500 mt-1" title="Date request was received">

@@ -65,8 +65,12 @@ class ApiService {
   }
 
   // Requests
-  async listRequests(): Promise<{ requests: Request[] }> {
-    return this.fetch('/api/requests');
+  async listRequests(params?: { search?: string; assignee?: string }): Promise<{ requests: Request[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.assignee) searchParams.set('assignee', params.assignee);
+    const query = searchParams.toString();
+    return this.fetch(`/api/requests${query ? `?${query}` : ''}`);
   }
 
   async getRequest(id: string): Promise<{ request: Request }> {
@@ -205,8 +209,11 @@ class ApiService {
   }
 
   // Archived requests
-  async listArchivedRequests(): Promise<{ requests: Request[] }> {
-    return this.fetch('/api/requests/archived');
+  async listArchivedRequests(params?: { search?: string }): Promise<{ requests: Request[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    const query = searchParams.toString();
+    return this.fetch(`/api/requests/archived${query ? `?${query}` : ''}`);
   }
 
   async archiveRequest(id: string): Promise<{ request: Request }> {
