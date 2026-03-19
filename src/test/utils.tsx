@@ -1,5 +1,5 @@
 import { ReactElement } from 'react';
-import { render, RenderOptions, waitFor } from '@testing-library/react';
+import { render, RenderOptions } from '@testing-library/react';
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { useRequestStore } from '../stores/requestStore';

@@ -124,13 +124,15 @@ class ApiService {
     return response.blob();
   }
 
-  async detectFaces(fileId: string, pageImageBlob?: Blob, pageNumber?: number): Promise<{ detections: Detection[]; count: number }> {
+  async detectFaces(fileId: string, pageImageBlob?: Blob, pageNumber?: number, dryRun = true): Promise<{ detections: Detection[]; count: number }> {
     if (pageImageBlob) {
       // For PDFs, send the rendered page image
       const token = this.getToken();
-      const url = pageNumber
-        ? `${API_BASE}/api/files/${fileId}/detect?page=${pageNumber}`
-        : `${API_BASE}/api/files/${fileId}/detect`;
+      const params = new URLSearchParams();
+      if (pageNumber) params.set('page', String(pageNumber));
+      if (dryRun) params.set('dry_run', 'true');
+      const queryString = params.toString();
+      const url = `${API_BASE}/api/files/${fileId}/detect${queryString ? `?${queryString}` : ''}`;
 
       const response = await fetch(url, {
         method: 'POST',
@@ -148,7 +150,7 @@ class ApiService {
 
       return response.json();
     }
-    return this.fetch(`/api/files/${fileId}/detect`, { method: 'POST' });
+    return this.fetch(`/api/files/${fileId}/detect${dryRun ? '?dry_run=true' : ''}`, { method: 'POST' });
   }
 
   // Detections

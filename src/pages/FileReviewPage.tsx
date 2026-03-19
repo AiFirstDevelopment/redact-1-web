@@ -36,7 +36,7 @@ interface PiiMatch {
 export function FileReviewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { detections, isLoading, error, fetchDetections, detectFaces, updateDetection, deleteDetection } = useDetectionStore();
+  const { detections, isLoading, error, fetchDetections, updateDetection, deleteDetection } = useDetectionStore();
   const [image, setImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -48,6 +48,16 @@ export function FileReviewPage() {
   const [drawRect, setDrawRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [modalMessage, setModalMessage] = useState<string | null>(null);
+  const [localDetections, setLocalDetections] = useState<Array<{
+    id: string;
+    bbox_x: number;
+    bbox_y: number;
+    bbox_width: number;
+    bbox_height: number;
+    page_number: number | null;
+    status: string;
+    detection_type: string;
+  }>>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
 
@@ -210,6 +220,7 @@ export function FileReviewPage() {
 
     try {
       console.log('[Detection] Starting detection for file:', id);
+      const newLocalDetections: typeof localDetections = [];
 
       if (pdfDoc) {
         // Process ALL pages of the PDF
@@ -217,24 +228,21 @@ export function FileReviewPage() {
           setDetectingPage(pageNum);
           console.log(`[Detection] Processing page ${pageNum} of ${totalPages}`);
 
-          // 1. Run client-side PII text detection
+          // 1. Run client-side PII text detection - add to local state
           const piiMatches = await detectPiiInPage(pdfDoc, pageNum);
           console.log(`[Detection] Found ${piiMatches.length} PII matches on page ${pageNum}`);
 
-          // Create detections for PII matches via API
           for (const match of piiMatches) {
-            try {
-              await api.createDetection(id, {
-                detection_type: match.type,
-                bbox_x: match.bbox.x,
-                bbox_y: match.bbox.y,
-                bbox_width: match.bbox.width,
-                bbox_height: match.bbox.height,
-                page_number: pageNum,
-              });
-            } catch (e) {
-              console.error('[Detection] Failed to create detection:', e);
-            }
+            newLocalDetections.push({
+              id: `local-${Date.now()}-${Math.random()}`,
+              detection_type: match.type,
+              bbox_x: match.bbox.x,
+              bbox_y: match.bbox.y,
+              bbox_width: match.bbox.width,
+              bbox_height: match.bbox.height,
+              page_number: pageNum,
+              status: 'pending',
+            });
           }
 
           // 2. Render page to canvas for face detection
@@ -251,7 +259,7 @@ export function FileReviewPage() {
             canvas: canvas,
           } as Parameters<typeof page.render>[0]).promise;
 
-          // Convert to blob and send for face detection
+          // Convert to blob and send for face detection (server-side)
           const pageBlob = await new Promise<Blob>((resolve, reject) => {
             canvas.toBlob((blob) => {
               if (blob) resolve(blob);
@@ -259,18 +267,41 @@ export function FileReviewPage() {
             }, 'image/png');
           });
 
-          await detectFaces(id, pageBlob, pageNum);
+          // Call face detection API and add results to local state
+          const faceResult = await api.detectFaces(id, pageBlob, pageNum);
+          for (const detection of faceResult.detections) {
+            newLocalDetections.push({
+              id: `local-${Date.now()}-${Math.random()}`,
+              detection_type: detection.detection_type,
+              bbox_x: detection.bbox_x ?? 0,
+              bbox_y: detection.bbox_y ?? 0,
+              bbox_width: detection.bbox_width ?? 0,
+              bbox_height: detection.bbox_height ?? 0,
+              page_number: pageNum,
+              status: 'pending',
+            });
+          }
         }
         setDetectingPage(null);
-
-        // Refresh all detections
-        await fetchDetections(id);
       } else {
-        // Single image - no page number, face detection only
-        await detectFaces(id);
+        // Single image - face detection only
+        const faceResult = await api.detectFaces(id);
+        for (const detection of faceResult.detections) {
+          newLocalDetections.push({
+            id: `local-${Date.now()}-${Math.random()}`,
+            detection_type: detection.detection_type,
+            bbox_x: detection.bbox_x ?? 0,
+            bbox_y: detection.bbox_y ?? 0,
+            bbox_width: detection.bbox_width ?? 0,
+            bbox_height: detection.bbox_height ?? 0,
+            page_number: null,
+            status: 'pending',
+          });
+        }
       }
 
-      console.log('[Detection] Detection complete');
+      setLocalDetections(prev => [...prev, ...newLocalDetections]);
+      console.log('[Detection] Detection complete, added', newLocalDetections.length, 'local detections');
       setHasUnsavedChanges(true);
     } catch (e) {
       console.error('[Detection] Detection failed:', e);
@@ -308,9 +339,30 @@ export function FileReviewPage() {
   };
 
   const handleSave = async () => {
-    // TODO: Save redactions to server and generate redacted file
-    setModalMessage('Save functionality - would save approved detections and generate redacted file');
-    setHasUnsavedChanges(false);
+    if (!id) return;
+
+    try {
+      // Persist local manual detections to the API
+      for (const detection of localDetections) {
+        await api.createDetection(id, {
+          detection_type: detection.detection_type,
+          bbox_x: detection.bbox_x,
+          bbox_y: detection.bbox_y,
+          bbox_width: detection.bbox_width,
+          bbox_height: detection.bbox_height,
+          page_number: detection.page_number ?? undefined,
+        });
+      }
+
+      // Clear local detections and refresh from server
+      setLocalDetections([]);
+      await fetchDetections(id);
+      setHasUnsavedChanges(false);
+      setModalMessage('Changes saved successfully');
+    } catch (e) {
+      console.error('Failed to save:', e);
+      setModalMessage('Failed to save changes');
+    }
   };
 
   // Drawing handlers - always enabled, starts when clicking empty space
@@ -351,27 +403,25 @@ export function FileReviewPage() {
       return;
     }
 
-    // Create manual redaction if large enough
+    // Create manual redaction if large enough - keep in local state until Save
     if (drawRect.width > 10 && drawRect.height > 10) {
       const normalizedX = drawRect.x / dimensions.width;
       const normalizedY = drawRect.y / dimensions.height;
       const normalizedW = drawRect.width / dimensions.width;
       const normalizedH = drawRect.height / dimensions.height;
 
-      try {
-        await api.createDetection(id, {
-          detection_type: 'manual',
-          bbox_x: normalizedX,
-          bbox_y: normalizedY,
-          bbox_width: normalizedW,
-          bbox_height: normalizedH,
-          status: 'approved',
-        });
-        await fetchDetections(id);
-        setHasUnsavedChanges(true);
-      } catch (e) {
-        console.error('Failed to create manual redaction:', e);
-      }
+      const localDetection = {
+        id: `local-${Date.now()}`,
+        detection_type: 'manual',
+        bbox_x: normalizedX,
+        bbox_y: normalizedY,
+        bbox_width: normalizedW,
+        bbox_height: normalizedH,
+        page_number: pdfDoc ? currentPage : null,
+        status: 'approved',
+      };
+      setLocalDetections(prev => [...prev, localDetection]);
+      setHasUnsavedChanges(true);
     }
 
     setIsDrawing(false);
@@ -379,7 +429,7 @@ export function FileReviewPage() {
     setDrawRect(null);
   };
 
-  const showDetectionPrompt = detections.length === 0 && !isLoading && detectingPage === null;
+  const showDetectionPrompt = detections.length === 0 && localDetections.length === 0 && !isLoading && detectingPage === null;
 
   return (
     <div className="fixed inset-0 bg-[#18181F] z-50 flex flex-col">
@@ -450,7 +500,7 @@ export function FileReviewPage() {
                   />
                   {/* Render detections for current page */}
                   {detections
-                    .filter((d) => d.page_number === null || d.page_number === currentPage)
+                    .filter((d) => d.page_number == null || d.page_number === currentPage)
                     .map((detection) => {
                     if (detection.bbox_x === null || detection.bbox_y === null ||
                         detection.bbox_width === null || detection.bbox_height === null) {
@@ -474,6 +524,37 @@ export function FileReviewPage() {
                       />
                     );
                   })}
+                  {/* Render local (unsaved) detections */}
+                  {localDetections
+                    .filter((d) => d.page_number == null || d.page_number === currentPage)
+                    .map((detection) => {
+                      const isPending = detection.status === 'pending';
+                      return (
+                        <Rect
+                          key={detection.id}
+                          x={detection.bbox_x * dimensions.width}
+                          y={detection.bbox_y * dimensions.height}
+                          width={detection.bbox_width * dimensions.width}
+                          height={detection.bbox_height * dimensions.height}
+                          stroke={isPending ? '#FFA500' : '#000000'}
+                          strokeWidth={2}
+                          dash={isPending ? [4, 2] : undefined}
+                          fill={isPending ? 'rgba(255, 165, 0, 0.15)' : 'rgba(0, 0, 0, 0.3)'}
+                          onClick={() => {
+                            if (isPending) {
+                              // Click to approve
+                              setLocalDetections(prev => prev.map(d =>
+                                d.id === detection.id ? { ...d, status: 'approved' } : d
+                              ));
+                            }
+                          }}
+                          onDblClick={() => {
+                            // Double-click to remove
+                            setLocalDetections(prev => prev.filter(d => d.id !== detection.id));
+                          }}
+                        />
+                      );
+                    })}
                   {/* Drawing rect preview */}
                   {isDrawing && drawRect && (
                     <Rect
@@ -507,8 +588,11 @@ export function FileReviewPage() {
             {/* Detecting Overlay */}
             {(isLoading || detectingPage !== null) && (
               <div className="absolute inset-0 bg-[#18181F]/75 flex flex-col items-center justify-center">
-                <div className="w-44 h-1 bg-gray-700 rounded overflow-hidden mb-4">
-                  <div className="h-full bg-[#B5594C] animate-[pulse_1s_ease-in-out_infinite]" style={{ width: '60%' }} />
+                <div className="w-44 h-2 bg-gray-700 rounded overflow-hidden mb-4">
+                  <div
+                    className="h-full bg-[#B5594C] transition-all duration-300"
+                    style={{ width: detectingPage !== null ? `${(detectingPage / totalPages) * 100}%` : '100%' }}
+                  />
                 </div>
                 <p className="text-white text-sm">
                   {detectingPage !== null
