@@ -9,7 +9,7 @@ export default {
       colors: {
         // Rich harmonious theme - better contrast
         'pastel-blue': '#6AB0B8',    // Vibrant teal for content areas
-        'pastel-peach': '#E8D5CC',   // Richer warm blush for right drawer
+        'pastel-peach': '#D4B8A8',   // Dusty rose for right drawer (matches tabs)
         'pastel-mint': '#9B2D30',    // True brick red for header
         'pastel-cream': '#D4B8A8',   // Warm dusty rose for tabs (bridges red/teal)
         'card-white': '#FFF0DC',     // Warm peach/apricot for cards

@@ -38,7 +38,6 @@ describe('RequestDetailPanel', () => {
   it('renders the panel header with request number', () => {
     renderPanel();
     expect(screen.getByText('RR-20260318-001')).toBeInTheDocument();
-    expect(screen.getByText('Request Details')).toBeInTheDocument();
   });
 
   it('displays request title', () => {

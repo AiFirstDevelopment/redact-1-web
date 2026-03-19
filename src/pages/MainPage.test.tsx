@@ -115,8 +115,10 @@ describe('MainPage', () => {
       // Click on the request number (not the title which triggers inline edit)
       await user.click(screen.getByText('RR-20260318-001'));
 
+      // Panel should show the request number (Request Details subtitle was removed)
       await waitFor(() => {
-        expect(screen.getByText('Request Details')).toBeInTheDocument();
+        // Check for a second instance of the request number (one in list, one in panel)
+        expect(screen.getAllByText('RR-20260318-001').length).toBeGreaterThan(1);
       });
     });
 

@@ -148,24 +148,20 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* Header */}
-      <div className="p-4 border-b flex justify-between items-center bg-card-white">
-        <div>
-          <h3 className="font-semibold text-blue-600">{request.request_number}</h3>
-          <p className="text-sm text-gray-500">Request Details</p>
-        </div>
-        <button
-          onClick={onClose}
-          className="p-2 text-gray-400 hover:text-gray-600"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
       {/* Content */}
       <div className="flex-1 overflow-auto p-4">
+        {/* Header */}
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-semibold text-blue-600 text-lg">{request.request_number}</h3>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-700 hover:text-gray-900"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
         {/* Request Info */}
         <div className="bg-card-white border rounded-lg p-4 mb-4 shadow-sm">
           {isEditingTitle ? (
