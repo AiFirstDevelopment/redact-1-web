@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Layout } from '../components/Layout';
 import { RequestsList } from '../components/RequestsList';
 import { RequestDetailPanel } from '../components/RequestDetailPanel';
@@ -13,6 +14,7 @@ type Tab = 'requests' | 'archived' | 'users' | 'settings';
 type RightPanel = 'detail' | 'new' | null;
 
 export function MainPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState<Tab>('requests');
   const [rightPanel, setRightPanel] = useState<RightPanel>(null);
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
@@ -24,6 +26,20 @@ export function MainPage() {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  // Auto-select request from URL param (when returning from file review)
+  useEffect(() => {
+    const requestId = searchParams.get('request');
+    if (requestId && requests.length > 0) {
+      const request = requests.find(r => r.id === requestId);
+      if (request) {
+        setSelectedRequest(request);
+        setRightPanel('detail');
+        // Clear the param from URL
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, requests, setSearchParams]);
 
   useEffect(() => {
     if (activeTab === 'archived') {
@@ -57,6 +73,16 @@ export function MainPage() {
     setRightPanel(null);
     setSelectedRequest(null);
   };
+
+  // Refresh selected request when requests change
+  useEffect(() => {
+    if (selectedRequest && requests.length > 0) {
+      const updated = requests.find(r => r.id === selectedRequest.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedRequest)) {
+        setSelectedRequest(updated);
+      }
+    }
+  }, [requests, selectedRequest]);
 
   const handleRequestCreated = (requestId: string) => {
     fetchRequests();
@@ -121,6 +147,7 @@ export function MainPage() {
         <RequestDetailPanel
           request={selectedRequest}
           onClose={handleClosePanel}
+          onRequestUpdated={fetchRequests}
         />
       );
     }
@@ -147,6 +174,7 @@ export function MainPage() {
             onNewRequest={handleNewRequest}
             onArchive={handleArchive}
             onDelete={handleDelete}
+            onRequestUpdated={fetchRequests}
           />
         );
       case 'archived':
@@ -159,6 +187,7 @@ export function MainPage() {
             onNewRequest={() => {}}
             onUnarchive={handleUnarchive}
             onDelete={handleDelete}
+            onRequestUpdated={fetchArchivedRequests}
             showArchived
           />
         );

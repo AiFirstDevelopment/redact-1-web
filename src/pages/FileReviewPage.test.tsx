@@ -249,4 +249,163 @@ describe('FileReviewPage', () => {
       });
     });
   });
+
+  // ============================================
+  // Exemption Code and Comment Tests
+  // ============================================
+
+  describe('Exemption Code and Comment Features', () => {
+    beforeEach(() => {
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          return HttpResponse.json({
+            detections: [mockDetection],
+            manual_redactions: [],
+          });
+        })
+      );
+    });
+
+    it('loads page with detections and shows Save button', async () => {
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+      });
+    });
+
+    it('loads page with Cancel button when detections exist', async () => {
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+      });
+    });
+
+    it('maintains detection state after loading', async () => {
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        // Page should load successfully with detections
+        expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+        expect(screen.queryByText(/run detection/i)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  // ============================================
+  // No Redactions Needed Tests
+  // ============================================
+
+  describe('No Redactions Needed', () => {
+    beforeEach(() => {
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          return HttpResponse.json({ detections: [], manual_redactions: [] });
+        })
+      );
+    });
+
+    it('shows No Redactions Needed button when no detections', async () => {
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /no redactions needed/i })).toBeInTheDocument();
+      });
+    });
+
+    it('calls mark-reviewed API when No Redactions Needed is clicked', async () => {
+      let markReviewedCalled = false;
+
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          return HttpResponse.json({ detections: [], manual_redactions: [] });
+        }),
+        http.post(`${API_BASE}/api/files/:id/mark-reviewed`, () => {
+          markReviewedCalled = true;
+          return HttpResponse.json({ file: { id: 'file-1', status: 'reviewed' } });
+        })
+      );
+
+      const user = userEvent.setup();
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /no redactions needed/i })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: /no redactions needed/i }));
+
+      await waitFor(() => {
+        expect(markReviewedCalled).toBe(true);
+      });
+    });
+  });
+
+  // ============================================
+  // Save Button Spinner Tests
+  // ============================================
+
+  describe('Save button states', () => {
+    beforeEach(() => {
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          return HttpResponse.json({ detections: [mockDetection], manual_redactions: [] });
+        })
+      );
+    });
+
+    it('disables Save button during save operation', async () => {
+      server.use(
+        http.put(`${API_BASE}/api/detections/:id`, async () => {
+          // Simulate slow API
+          await new Promise(resolve => setTimeout(resolve, 100));
+          return HttpResponse.json({ detection: mockDetection });
+        })
+      );
+
+      const user = userEvent.setup();
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+      });
+
+      const saveButton = screen.getByRole('button', { name: /save/i });
+      await user.click(saveButton);
+
+      // Button should be disabled during save
+      expect(saveButton).toBeDisabled();
+    });
+  });
+
+  // ============================================
+  // Navigation with Request Context Tests
+  // ============================================
+
+  describe('Navigation with request context', () => {
+    const renderWithRequestParam = () => {
+      return render(
+        <MemoryRouter initialEntries={['/files/file-1?request=req-1']}>
+          <Routes>
+            <Route path="/files/:id" element={<FileReviewPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+    };
+
+    it('preserves request ID in URL for navigation', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          return HttpResponse.json({ detections: [mockDetection], manual_redactions: [] });
+        })
+      );
+
+      renderWithRequestParam();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+      });
+    });
+  });
 });

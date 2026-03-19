@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Stage, Layer, Image as KonvaImage, Rect } from 'react-konva';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Stage, Layer, Image as KonvaImage, Rect, Circle, Group } from 'react-konva';
 import Konva from 'konva';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useDetectionStore } from '../stores/detectionStore';
 import { api } from '../services/api';
+import { ExemptionCode, EXEMPTION_LABELS, DEFAULT_EXEMPTION_CODES, Detection } from '../types';
 
 // Set up PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -36,7 +37,9 @@ interface PiiMatch {
 export function FileReviewPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { detections, isLoading, error, fetchDetections, updateDetection, deleteDetection } = useDetectionStore();
+  const [searchParams] = useSearchParams();
+  const requestId = searchParams.get('request');
+  const { detections, isLoading, error, fetchDetections } = useDetectionStore();
   const [image, setImage] = useState<HTMLImageElement | HTMLCanvasElement | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -57,7 +60,13 @@ export function FileReviewPage() {
     page_number: number | null;
     status: string;
     detection_type: string;
+    exemption_code: string | null;
+    comment: string | null;
   }>>([]);
+  const [selectedDetectionId, setSelectedDetectionId] = useState<string | null>(null);
+  const [toolbarExemptionCode, setToolbarExemptionCode] = useState<ExemptionCode>('b6');
+  const [toolbarComment, setToolbarComment] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
 
@@ -242,6 +251,8 @@ export function FileReviewPage() {
               bbox_height: match.bbox.height,
               page_number: pageNum,
               status: 'pending',
+              exemption_code: null,
+              comment: null,
             });
           }
 
@@ -279,6 +290,8 @@ export function FileReviewPage() {
               bbox_height: detection.bbox_height ?? 0,
               page_number: pageNum,
               status: 'pending',
+              exemption_code: null,
+              comment: null,
             });
           }
         }
@@ -296,6 +309,8 @@ export function FileReviewPage() {
             bbox_height: detection.bbox_height ?? 0,
             page_number: null,
             status: 'pending',
+            exemption_code: null,
+            comment: null,
           });
         }
       }
@@ -310,22 +325,77 @@ export function FileReviewPage() {
     }
   };
 
-  // Click on pending detection = approve it
-  const handleDetectionClick = async (detectionId: string, status: string) => {
-    if (status === 'pending') {
-      await updateDetection(detectionId, { status: 'approved' });
-      setHasUnsavedChanges(true);
-    }
+  // Click on detection = select it and show toolbar
+  const handleDetectionClick = (detectionId: string, detectionType: string, _status: string, exemptionCode: string | null, comment: string | null) => {
+    setSelectedDetectionId(detectionId);
+    // Set toolbar defaults based on detection type or existing values
+    const defaultCode = DEFAULT_EXEMPTION_CODES[detectionType as Detection['detection_type']] || 'b6';
+    setToolbarExemptionCode((exemptionCode as ExemptionCode) || defaultCode);
+    setToolbarComment(comment || '');
   };
 
-  // Double-click = delete/reject
-  const handleDetectionDblClick = async (detectionId: string) => {
-    await deleteDetection(detectionId);
+  // Handle approve from toolbar
+  const handleToolbarApprove = () => {
+    if (!selectedDetectionId) return;
+
+    // Check if it's a local detection
+    const localDetection = localDetections.find(d => d.id === selectedDetectionId);
+    if (localDetection) {
+      setLocalDetections(prev => prev.map(d =>
+        d.id === selectedDetectionId
+          ? { ...d, status: 'approved', exemption_code: toolbarExemptionCode, comment: toolbarComment || null }
+          : d
+      ));
+    }
+    // Note: Server detections are not handled here since they're already saved
+
+    setSelectedDetectionId(null);
     setHasUnsavedChanges(true);
   };
 
+  // Handle reject from toolbar
+  const handleToolbarReject = () => {
+    if (!selectedDetectionId) return;
+
+    // Check if it's a local detection
+    const localDetection = localDetections.find(d => d.id === selectedDetectionId);
+    if (localDetection) {
+      setLocalDetections(prev => prev.filter(d => d.id !== selectedDetectionId));
+    }
+
+    setSelectedDetectionId(null);
+    setHasUnsavedChanges(true);
+  };
+
+  // Deselect when clicking elsewhere
+  const handleStageClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    // Only deselect if clicking on background, not on a detection
+    if (e.target === e.target.getStage() || e.target.getClassName() === 'Image') {
+      setSelectedDetectionId(null);
+    }
+  };
+
+  const goBackToRequest = () => {
+    if (requestId) {
+      navigate(`/?request=${requestId}`);
+    } else {
+      navigate('/');
+    }
+  };
+
   const handleClose = () => {
-    navigate(-1);
+    goBackToRequest();
+  };
+
+  const handleMarkNoRedactionsNeeded = async () => {
+    if (!id) return;
+    try {
+      await api.markFileReviewed(id);
+      setModalMessage('File marked as reviewed - no redactions needed');
+      setTimeout(() => goBackToRequest(), 1500);
+    } catch (e) {
+      setModalMessage('Failed to mark file as reviewed');
+    }
   };
 
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -334,15 +404,16 @@ export function FileReviewPage() {
     if (hasUnsavedChanges) {
       setShowCancelConfirm(true);
     } else {
-      navigate(-1);
+      goBackToRequest();
     }
   };
 
   const handleSave = async () => {
     if (!id) return;
+    setIsSaving(true);
 
     try {
-      // Persist local manual detections to the API
+      // Persist local detections to the API
       for (const detection of localDetections) {
         await api.createDetection(id, {
           detection_type: detection.detection_type,
@@ -351,17 +422,21 @@ export function FileReviewPage() {
           bbox_width: detection.bbox_width,
           bbox_height: detection.bbox_height,
           page_number: detection.page_number ?? undefined,
+          status: detection.status,
+          exemption_code: detection.exemption_code ?? undefined,
+          comment: detection.comment ?? undefined,
         });
       }
 
-      // Clear local detections and refresh from server
+      // Clear local detections and navigate back
       setLocalDetections([]);
-      await fetchDetections(id);
       setHasUnsavedChanges(false);
       setModalMessage('Changes saved successfully');
+      setTimeout(() => goBackToRequest(), 1000);
     } catch (e) {
       console.error('Failed to save:', e);
       setModalMessage('Failed to save changes');
+      setIsSaving(false);
     }
   };
 
@@ -410,17 +485,23 @@ export function FileReviewPage() {
       const normalizedW = drawRect.width / dimensions.width;
       const normalizedH = drawRect.height / dimensions.height;
 
+      const newId = `local-${Date.now()}`;
       const localDetection = {
-        id: `local-${Date.now()}`,
+        id: newId,
         detection_type: 'manual',
         bbox_x: normalizedX,
         bbox_y: normalizedY,
         bbox_width: normalizedW,
         bbox_height: normalizedH,
         page_number: pdfDoc ? currentPage : null,
-        status: 'approved',
+        status: 'pending', // Start as pending, user must approve with exemption code
+        exemption_code: null,
+        comment: null,
       };
       setLocalDetections(prev => [...prev, localDetection]);
+      setSelectedDetectionId(newId); // Select it immediately to show toolbar
+      setToolbarExemptionCode('b6'); // Default for manual
+      setToolbarComment('');
       setHasUnsavedChanges(true);
     }
 
@@ -460,10 +541,17 @@ export function FileReviewPage() {
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2.5 rounded-lg font-semibold cursor-pointer border-0"
+              disabled={isSaving}
+              className="px-4 py-2.5 rounded-lg font-semibold cursor-pointer border-0 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               style={{ backgroundColor: '#8FB8A0', color: '#2D3E35' }}
             >
-              Save
+              {isSaving && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {isSaving ? 'Saving...' : 'Save'}
             </button>
           </div>
         )}
@@ -490,6 +578,7 @@ export function FileReviewPage() {
                 onMouseDown={handleStageMouseDown}
                 onMouseMove={handleStageMouseMove}
                 onMouseUp={handleStageMouseUp}
+                onClick={handleStageClick}
                 style={{ cursor: isDrawing ? 'crosshair' : 'default' }}
               >
                 <Layer>
@@ -498,61 +587,42 @@ export function FileReviewPage() {
                     width={dimensions.width}
                     height={dimensions.height}
                   />
-                  {/* Render detections for current page */}
-                  {detections
-                    .filter((d) => d.page_number == null || d.page_number === currentPage)
-                    .map((detection) => {
-                    if (detection.bbox_x === null || detection.bbox_y === null ||
-                        detection.bbox_width === null || detection.bbox_height === null) {
-                      return null;
-                    }
-                    const isPending = detection.status === 'pending';
-                    return (
-                      <Rect
-                        key={detection.id}
-                        x={detection.bbox_x * dimensions.width}
-                        y={detection.bbox_y * dimensions.height}
-                        width={detection.bbox_width * dimensions.width}
-                        height={detection.bbox_height * dimensions.height}
-                        stroke={isPending ? '#FFA500' : '#000000'}
-                        strokeWidth={2}
-                        dash={isPending ? [4, 2] : undefined}
-                        fill={isPending ? 'rgba(255, 165, 0, 0.15)' : 'rgba(0, 0, 0, 0.3)'}
-                        onClick={() => handleDetectionClick(detection.id, detection.status)}
-                        onDblClick={() => handleDetectionDblClick(detection.id)}
-                        onTap={() => handleDetectionClick(detection.id, detection.status)}
-                      />
-                    );
-                  })}
                   {/* Render local (unsaved) detections */}
                   {localDetections
                     .filter((d) => d.page_number == null || d.page_number === currentPage)
                     .map((detection) => {
                       const isPending = detection.status === 'pending';
+                      const isSelected = selectedDetectionId === detection.id;
+                      const hasComment = !!detection.comment;
+                      const rectX = detection.bbox_x * dimensions.width;
+                      const rectY = detection.bbox_y * dimensions.height;
+                      const rectW = detection.bbox_width * dimensions.width;
+                      const rectH = detection.bbox_height * dimensions.height;
                       return (
-                        <Rect
-                          key={detection.id}
-                          x={detection.bbox_x * dimensions.width}
-                          y={detection.bbox_y * dimensions.height}
-                          width={detection.bbox_width * dimensions.width}
-                          height={detection.bbox_height * dimensions.height}
-                          stroke={isPending ? '#FFA500' : '#000000'}
-                          strokeWidth={2}
-                          dash={isPending ? [4, 2] : undefined}
-                          fill={isPending ? 'rgba(255, 165, 0, 0.15)' : 'rgba(0, 0, 0, 0.3)'}
-                          onClick={() => {
-                            if (isPending) {
-                              // Click to approve
-                              setLocalDetections(prev => prev.map(d =>
-                                d.id === detection.id ? { ...d, status: 'approved' } : d
-                              ));
-                            }
-                          }}
-                          onDblClick={() => {
-                            // Double-click to remove
-                            setLocalDetections(prev => prev.filter(d => d.id !== detection.id));
-                          }}
-                        />
+                        <Group key={detection.id}>
+                          <Rect
+                            x={rectX}
+                            y={rectY}
+                            width={rectW}
+                            height={rectH}
+                            stroke={isSelected ? '#3B82F6' : isPending ? '#FFA500' : '#000000'}
+                            strokeWidth={isSelected ? 3 : 2}
+                            dash={isPending && !isSelected ? [4, 2] : undefined}
+                            fill={isSelected ? 'rgba(59, 130, 246, 0.2)' : isPending ? 'rgba(255, 165, 0, 0.15)' : 'rgba(0, 0, 0, 0.3)'}
+                            onClick={() => handleDetectionClick(detection.id, detection.detection_type, detection.status, detection.exemption_code, detection.comment)}
+                            onTap={() => handleDetectionClick(detection.id, detection.detection_type, detection.status, detection.exemption_code, detection.comment)}
+                          />
+                          {hasComment && (
+                            <Circle
+                              x={rectX + rectW - 6}
+                              y={rectY + 6}
+                              radius={5}
+                              fill="#60A5FA"
+                              stroke="#1E40AF"
+                              strokeWidth={1}
+                            />
+                          )}
+                        </Group>
                       );
                     })}
                   {/* Drawing rect preview */}
@@ -575,13 +645,21 @@ export function FileReviewPage() {
             {/* Run Detection Prompt Overlay */}
             {showDetectionPrompt && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <button
-                  onClick={handleDetect}
-                  className="text-white text-lg font-bold px-8 py-4 rounded-xl border-0 cursor-pointer hover:opacity-90 transition-opacity"
-                  style={{ backgroundColor: '#B5594C' }}
-                >
-                  Run Detection
-                </button>
+                <div className="flex flex-col gap-4">
+                  <button
+                    onClick={handleDetect}
+                    className="text-white text-lg font-bold px-8 py-4 rounded-xl border-0 cursor-pointer hover:opacity-90 transition-opacity"
+                    style={{ backgroundColor: '#B5594C' }}
+                  >
+                    Run Detection
+                  </button>
+                  <button
+                    onClick={handleMarkNoRedactionsNeeded}
+                    className="text-gray-300 text-sm px-6 py-2 rounded-lg border border-gray-500 cursor-pointer hover:bg-gray-700 transition-colors bg-transparent"
+                  >
+                    No Redactions Needed
+                  </button>
+                </div>
               </div>
             )}
 
@@ -608,6 +686,57 @@ export function FileReviewPage() {
                 {error}
               </div>
             )}
+
+            {/* Floating Toolbar for selected detection */}
+            {selectedDetectionId && (() => {
+              const selected = localDetections.find(d => d.id === selectedDetectionId);
+              if (!selected) return null;
+
+              // Position toolbar below the detection
+              const toolbarX = selected.bbox_x * dimensions.width;
+              const toolbarY = (selected.bbox_y + selected.bbox_height) * dimensions.height + 8;
+
+              return (
+                <div
+                  className="absolute bg-[#252530] rounded-lg shadow-xl p-3 flex items-center gap-2 z-50"
+                  style={{
+                    left: Math.max(8, Math.min(toolbarX, dimensions.width - 320)),
+                    top: Math.min(toolbarY, dimensions.height - 60),
+                  }}
+                >
+                  <select
+                    value={toolbarExemptionCode}
+                    onChange={(e) => setToolbarExemptionCode(e.target.value as ExemptionCode)}
+                    className="bg-gray-700 text-white text-sm rounded px-2 py-1.5 border-0 outline-none cursor-pointer"
+                  >
+                    {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
+                      <option key={code} value={code}>{label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Add note..."
+                    value={toolbarComment}
+                    onChange={(e) => setToolbarComment(e.target.value)}
+                    className="bg-gray-700 text-white text-sm rounded px-2 py-1.5 w-28 border-0 outline-none placeholder-gray-400"
+                  />
+                  <button
+                    onClick={handleToolbarApprove}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                    title="Approve"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    onClick={handleToolbarReject}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                    title="Reject"
+                  >
+                    ✗
+                  </button>
+                </div>
+              );
+            })()}
           </>
         ) : (
           <div className="text-gray-400">Loading file...</div>
@@ -670,7 +799,7 @@ export function FileReviewPage() {
               <button
                 onClick={() => {
                   setShowCancelConfirm(false);
-                  navigate(-1);
+                  goBackToRequest();
                 }}
                 className="flex-1 py-2.5 rounded-lg font-semibold"
                 style={{ backgroundColor: '#B5594C', color: 'white' }}

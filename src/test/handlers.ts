@@ -58,6 +58,8 @@ export const mockDetection = {
   text_content: null,
   confidence: 0.95,
   status: 'pending' as const,
+  exemption_code: null,
+  comment: null,
   reviewed_by: null,
   reviewed_at: null,
   created_at: Date.now(),
@@ -157,6 +159,12 @@ export const handlers = [
 
   http.delete(`${API_BASE}/api/files/:id`, () => {
     return HttpResponse.json({ success: true });
+  }),
+
+  http.post(`${API_BASE}/api/files/:id/mark-reviewed`, ({ params }) => {
+    return HttpResponse.json({
+      file: { ...mockFile, id: params.id as string, status: 'reviewed' },
+    });
   }),
 
   // Detections

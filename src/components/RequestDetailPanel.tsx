@@ -1,20 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRequestStore } from '../stores/requestStore';
+import { api } from '../services/api';
 import type { Request, EvidenceFile } from '../types';
 
 interface RequestDetailPanelProps {
   request: Request;
   onClose: () => void;
+  onRequestUpdated?: () => void;
 }
 
-export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps) {
+export function RequestDetailPanel({ request, onClose, onRequestUpdated }: RequestDetailPanelProps) {
   const { files, fetchFiles, uploadFile, deleteFile } = useRequestStore();
   const [isUploading, setIsUploading] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<EvidenceFile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(request.title || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  const saveTitle = async () => {
+    try {
+      await api.updateRequest(request.id, { title: editingTitle });
+      setIsEditingTitle(false);
+      onRequestUpdated?.();
+    } catch (err) {
+      console.error('Failed to update title:', err);
+    }
+  };
+
+  const cancelEditingTitle = () => {
+    setIsEditingTitle(false);
+    setEditingTitle(request.title || '');
+  };
 
   useEffect(() => {
     fetchFiles(request.id);
@@ -38,7 +57,9 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
   };
 
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString();
+    // Handle timestamps in seconds vs milliseconds
+    const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp;
+    return new Date(ms).toLocaleDateString();
   };
 
   const formatFileSize = (bytes: number) => {
@@ -62,7 +83,7 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
   };
 
   const openFileReview = (fileId: string) => {
-    navigate(`/files/${fileId}`);
+    navigate(`/files/${fileId}?request=${request.id}`);
   };
 
   const handleDeleteClick = (e: React.MouseEvent, file: EvidenceFile) => {
@@ -105,7 +126,48 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
       <div className="flex-1 overflow-auto p-4">
         {/* Request Info */}
         <div className="bg-white border rounded-lg p-4 mb-4">
-          <h4 className="font-semibold text-lg mb-2">{request.title}</h4>
+          {isEditingTitle ? (
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                value={editingTitle}
+                onChange={(e) => setEditingTitle(e.target.value)}
+                className="flex-1 px-2 py-1 text-lg font-semibold border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="Add title..."
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveTitle();
+                  if (e.key === 'Escape') cancelEditingTitle();
+                }}
+              />
+              <button
+                onClick={saveTitle}
+                className="p-1 text-green-600 hover:text-green-700"
+                title="Save"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
+              <button
+                onClick={cancelEditingTitle}
+                className="p-1 text-red-600 hover:text-red-700"
+                title="Cancel"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <h4
+              className={`font-semibold text-lg mb-2 ${request.title ? '' : 'text-gray-400 italic'} hover:text-blue-600 cursor-text`}
+              onClick={() => setIsEditingTitle(true)}
+              title="Click to edit title"
+            >
+              {request.title || 'Add title...'}
+            </h4>
+          )}
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Request Date:</span>
@@ -169,7 +231,40 @@ export function RequestDetailPanel({ request, onClose }: RequestDetailPanelProps
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{file.filename}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm truncate">{file.filename}</p>
+                      {(() => {
+                        const detections = file.detection_count ?? 0;
+                        const pending = file.pending_count ?? 0;
+                        const isReviewed = file.status === 'reviewed' || file.status === 'exported';
+
+                        // File explicitly marked as reviewed (no redactions needed)
+                        if (isReviewed && detections === 0) {
+                          return (
+                            <span className="px-1.5 py-0.5 text-xs rounded bg-green-600 text-white flex-shrink-0">
+                              Completed
+                            </span>
+                          );
+                        }
+                        // Has detections with some pending
+                        if (detections > 0 && pending > 0) {
+                          return (
+                            <span className="px-1.5 py-0.5 text-xs rounded bg-yellow-500 text-white flex-shrink-0">
+                              Draft
+                            </span>
+                          );
+                        }
+                        // Has detections, all reviewed
+                        if (detections > 0 && pending === 0) {
+                          return (
+                            <span className="px-1.5 py-0.5 text-xs rounded bg-green-600 text-white flex-shrink-0">
+                              Completed
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                     <p className="text-xs text-gray-500">{formatFileSize(file.file_size)}</p>
                   </div>
                   <button

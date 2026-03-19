@@ -8,7 +8,6 @@ interface NewRequestPanelProps {
 
 export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
   const { createRequest, isLoading } = useRequestStore();
-  const [requestNumber, setRequestNumber] = useState('');
   const [title, setTitle] = useState('');
   const [requestDate, setRequestDate] = useState(
     new Date().toISOString().split('T')[0]
@@ -20,15 +19,9 @@ export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
     e.preventDefault();
     setError(null);
 
-    if (!requestNumber.trim() || !title.trim()) {
-      setError('Request number and title are required');
-      return;
-    }
-
     try {
       const request = await createRequest({
-        request_number: requestNumber.trim(),
-        title: title.trim(),
+        title: title.trim() || undefined,
         request_date: new Date(requestDate).getTime(),
         notes: notes.trim() || undefined,
       });
@@ -67,29 +60,14 @@ export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Request Number *
-            </label>
-            <input
-              type="text"
-              value={requestNumber}
-              onChange={(e) => setRequestNumber(e.target.value)}
-              placeholder="e.g., FOIA-2024-001"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Title *
+              Title
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Brief description of the request"
+              placeholder="Optional - brief description of the request"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
             />
           </div>
 

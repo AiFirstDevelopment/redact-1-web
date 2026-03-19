@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Request } from '../types';
+import { api } from '../services/api';
 
 interface RequestsListProps {
   requests: Request[];
@@ -10,6 +11,7 @@ interface RequestsListProps {
   onArchive?: (id: string) => void;
   onUnarchive?: (id: string) => void;
   onDelete?: (id: string) => void;
+  onRequestUpdated?: () => void;
   showArchived?: boolean;
 }
 
@@ -22,10 +24,13 @@ export function RequestsList({
   onArchive,
   onUnarchive,
   onDelete,
+  onRequestUpdated,
   showArchived = false,
 }: RequestsListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
 
   const filteredRequests = requests.filter(
     (r) =>
@@ -34,7 +39,9 @@ export function RequestsList({
   );
 
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString();
+    // Handle timestamps in seconds vs milliseconds
+    const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp;
+    return new Date(ms).toLocaleDateString();
   };
 
   const getStatusBadge = (status: string) => {
@@ -53,6 +60,29 @@ export function RequestsList({
     } else {
       setDeleteConfirm(id);
     }
+  };
+
+  const startEditingTitle = (e: React.MouseEvent, request: Request) => {
+    e.stopPropagation();
+    setEditingId(request.id);
+    setEditingTitle(request.title || '');
+  };
+
+  const saveTitle = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await api.updateRequest(id, { title: editingTitle });
+      setEditingId(null);
+      onRequestUpdated?.();
+    } catch (err) {
+      console.error('Failed to update title:', err);
+    }
+  };
+
+  const cancelEditingTitle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(null);
+    setEditingTitle('');
   };
 
   return (
@@ -111,9 +141,62 @@ export function RequestsList({
                     <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(request.status)}`}>
                       {request.status.replace('_', ' ')}
                     </span>
+                    {(request.file_count ?? 0) > 0 && (
+                      <span
+                        className={`px-2 py-0.5 text-xs rounded-full ${
+                          (request.files_completed ?? 0) === (request.file_count ?? 0)
+                            ? 'bg-green-700 text-white'
+                            : 'bg-gray-200 text-gray-700'
+                        }`}
+                        title={`${request.files_completed ?? 0} of ${request.file_count} file${request.file_count !== 1 ? 's' : ''} reviewed`}
+                      >
+                        {request.files_completed ?? 0}/{request.file_count} file{request.file_count !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-gray-900">{request.title}</p>
-                  <p className="text-sm text-gray-500 mt-1">
+                  {editingId === request.id ? (
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="Add title..."
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveTitle(e as unknown as React.MouseEvent, request.id);
+                          if (e.key === 'Escape') cancelEditingTitle(e as unknown as React.MouseEvent);
+                        }}
+                      />
+                      <button
+                        onClick={(e) => saveTitle(e, request.id)}
+                        className="p-1 text-green-600 hover:text-green-700"
+                        title="Save"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={cancelEditingTitle}
+                        className="p-1 text-red-600 hover:text-red-700"
+                        title="Cancel"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <p
+                      className={`${request.title ? 'text-gray-900' : 'text-gray-400 italic'} hover:text-blue-600 cursor-text`}
+                      onClick={(e) => startEditingTitle(e, request)}
+                      title="Click to edit title"
+                    >
+                      {request.title || 'Add title...'}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-500 mt-1" title="Date request was received">
                     {formatDate(request.request_date)}
                   </p>
                 </div>

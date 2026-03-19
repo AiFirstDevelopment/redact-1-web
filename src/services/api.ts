@@ -166,6 +166,8 @@ class ApiService {
     bbox_height: number;
     page_number?: number;
     status?: string;
+    exemption_code?: string;
+    comment?: string;
   }): Promise<{ detections: Detection[] }> {
     // API expects { detections: [...] } format
     return this.fetch(`/api/files/${fileId}/detections`, {
@@ -217,6 +219,10 @@ class ApiService {
 
   async deleteFile(id: string): Promise<{ success: boolean }> {
     return this.fetch(`/api/files/${id}`, { method: 'DELETE' });
+  }
+
+  async markFileReviewed(id: string): Promise<{ file: EvidenceFile }> {
+    return this.fetch(`/api/files/${id}/mark-reviewed`, { method: 'POST' });
   }
 
   // Users

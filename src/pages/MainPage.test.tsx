@@ -100,7 +100,7 @@ describe('MainPage', () => {
       await user.click(screen.getByRole('button', { name: /new request/i }));
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText(/brief description/i)).toBeInTheDocument();
+        expect(screen.getByPlaceholderText(/optional/i)).toBeInTheDocument();
       });
     });
 
@@ -109,10 +109,11 @@ describe('MainPage', () => {
       renderMainPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Test Request')).toBeInTheDocument();
+        expect(screen.getByText('RR-20260318-001')).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText('Test Request'));
+      // Click on the request number (not the title which triggers inline edit)
+      await user.click(screen.getByText('RR-20260318-001'));
 
       await waitFor(() => {
         expect(screen.getByText('Request Details')).toBeInTheDocument();
