@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { BrowserRouter } from 'react-router-dom';
+import { http, HttpResponse } from 'msw';
 import { RequestsList } from './RequestsList';
 import { mockRequest } from '../test/handlers';
+import { server } from '../test/setup';
+
+const API_BASE = 'https://redact-1-worker.joelstevick.workers.dev';
 
 const renderRequestsList = (props = {}) => {
   const defaultProps = {
@@ -295,6 +299,119 @@ describe('RequestsList', () => {
 
       const dateWithTooltip = screen.getByTitle(/date request was received/i);
       expect(dateWithTooltip).toBeInTheDocument();
+    });
+  });
+
+  // ============================================
+  // Download Button Tests
+  // ============================================
+
+  describe('download button state', () => {
+    it('disables download when files have pending detections', async () => {
+      // Mock files with pending detections
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'test.pdf',
+              status: 'uploaded',
+              detection_count: 2,
+              pending_count: 1, // Has pending
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/complete review to enable download/i);
+        expect(downloadBtn).toBeDisabled();
+      });
+    });
+
+    it('enables download when all files are completed', async () => {
+      // Mock files with all detections completed
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'test.pdf',
+              status: 'uploaded',
+              detection_count: 2,
+              pending_count: 0, // No pending
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download when file is marked as reviewed', async () => {
+      // Mock file marked as reviewed (no detections needed)
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'test.pdf',
+              status: 'reviewed',
+              detection_count: 0,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('disables download when request has no files', async () => {
+      // Mock empty files
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({ files: [] });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/complete review to enable download/i);
+        expect(downloadBtn).toBeDisabled();
+      });
+    });
+
+    it('disables download when file check fails', async () => {
+      // Mock API error
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({ error: 'Server error' }, { status: 500 });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/complete review to enable download/i);
+        expect(downloadBtn).toBeDisabled();
+      });
     });
   });
 });

@@ -39,6 +39,7 @@ export function RequestsList({
   const [editingTitle, setEditingTitle] = useState('');
   const [users, setUsers] = useState<User[]>([]);
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [downloadReadyMap, setDownloadReadyMap] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -51,6 +52,43 @@ export function RequestsList({
     };
     loadUsers();
   }, []);
+
+  // Check which requests have all files completed (ready for download)
+  useEffect(() => {
+    const checkDownloadReady = async () => {
+      const readyMap: Record<string, boolean> = {};
+
+      for (const request of requests) {
+        try {
+          const { files } = await api.listFiles(request.id);
+
+          // No files = not ready
+          if (files.length === 0) {
+            readyMap[request.id] = false;
+            continue;
+          }
+
+          // Check if all files are completed
+          const allCompleted = files.every(file => {
+            const isReviewed = file.status === 'reviewed' || file.status === 'exported';
+            const hasCompletedDetections = (file.detection_count ?? 0) > 0 && (file.pending_count ?? 0) === 0;
+            return isReviewed || hasCompletedDetections;
+          });
+
+          readyMap[request.id] = allCompleted;
+        } catch (err) {
+          console.error(`Failed to check files for request ${request.id}:`, err);
+          readyMap[request.id] = false;
+        }
+      }
+
+      setDownloadReadyMap(readyMap);
+    };
+
+    if (requests.length > 0) {
+      checkDownloadReady();
+    }
+  }, [requests]);
 
   const handleAssignmentChange = async (e: React.ChangeEvent<HTMLSelectElement>, requestId: string) => {
     e.stopPropagation();
@@ -383,9 +421,9 @@ export function RequestsList({
                   </button>
                   <button
                     onClick={(e) => handleDownload(e, request)}
-                    disabled={downloadingId === request.id || request.status !== 'completed'}
+                    disabled={downloadingId === request.id || !downloadReadyMap[request.id]}
                     className="p-2 text-gray-400 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={request.status === 'completed' ? 'Download Redacted Files' : 'Complete review to enable download'}
+                    title={downloadReadyMap[request.id] ? 'Download Redacted Files' : 'Complete review to enable download'}
                   >
                     {downloadingId === request.id ? (
                       <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">

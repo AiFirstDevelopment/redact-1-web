@@ -42,6 +42,8 @@ export const mockFile = {
   uploaded_by: 'user-1',
   created_at: Date.now(),
   updated_at: Date.now(),
+  detection_count: 1,
+  pending_count: 1,
 };
 
 export const mockDetection = {

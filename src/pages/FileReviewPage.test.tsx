@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw';
 import { FileReviewPage } from './FileReviewPage';
 import { useAuthStore } from '../stores/authStore';
 import { useDetectionStore } from '../stores/detectionStore';
-import { mockUser, mockAgency, mockDetection } from '../test/handlers';
+import { mockUser, mockAgency, mockDetection, mockFile, mockRequest } from '../test/handlers';
 import { server } from '../test/setup';
 
 const API_BASE = 'https://redact-1-worker.joelstevick.workers.dev';
@@ -412,6 +412,94 @@ describe('FileReviewPage', () => {
       await waitFor(() => {
         expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
       });
+    });
+
+    it('marks file as reviewed when all detections are processed', async () => {
+      const markFileReviewedCalled = vi.fn();
+
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          // Return detection that will be approved (no pending)
+          return HttpResponse.json({
+            detections: [{
+              ...mockDetection,
+              status: 'approved',
+            }],
+            manual_redactions: [],
+          });
+        }),
+        http.post(`${API_BASE}/api/files/:id/mark-reviewed`, () => {
+          markFileReviewedCalled();
+          return HttpResponse.json({ file: { ...mockFile, status: 'reviewed' } });
+        }),
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              ...mockFile,
+              status: 'reviewed',
+              pending_count: 0,
+              detection_count: 1,
+            }],
+          });
+        }),
+        http.put(`${API_BASE}/api/requests/:id`, () => {
+          return HttpResponse.json({ request: { ...mockRequest, status: 'completed' } });
+        })
+      );
+
+      const user = userEvent.setup();
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+      });
+
+      const saveButton = screen.getByRole('button', { name: /save/i });
+      await user.click(saveButton);
+
+      // After save, file should be marked as reviewed
+      await waitFor(() => {
+        expect(markFileReviewedCalled).toHaveBeenCalled();
+      });
+    });
+
+    it('does not mark file as reviewed when detections are still pending', async () => {
+      const markFileReviewedCalled = vi.fn();
+
+      server.use(
+        http.get(`${API_BASE}/api/files/:fileId/detections`, () => {
+          // Return detection that is still pending
+          return HttpResponse.json({
+            detections: [{
+              ...mockDetection,
+              status: 'pending',
+            }],
+            manual_redactions: [],
+          });
+        }),
+        http.post(`${API_BASE}/api/files/:id/mark-reviewed`, () => {
+          markFileReviewedCalled();
+          return HttpResponse.json({ file: { ...mockFile, status: 'reviewed' } });
+        })
+      );
+
+      const user = userEvent.setup();
+      renderFileReviewPage();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+      });
+
+      const saveButton = screen.getByRole('button', { name: /save/i });
+      await user.click(saveButton);
+
+      // Wait for save to complete
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
+      });
+
+      // File should NOT be marked as reviewed because detections are pending
+      expect(markFileReviewedCalled).not.toHaveBeenCalled();
     });
   });
 

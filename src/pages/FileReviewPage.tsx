@@ -465,6 +465,26 @@ export function FileReviewPage() {
     if (!id) return;
     try {
       await api.markFileReviewed(id);
+
+      // Check if request should be marked as completed
+      if (requestId) {
+        try {
+          const { files } = await api.listFiles(requestId);
+          const allFilesCompleted = files.every(file => {
+            const isReviewed = file.status === 'reviewed' || file.status === 'exported';
+            const hasCompletedDetections = (file.detection_count ?? 0) > 0 && (file.pending_count ?? 0) === 0;
+            return isReviewed || hasCompletedDetections;
+          });
+
+          if (allFilesCompleted && files.length > 0) {
+            await api.updateRequest(requestId, { status: 'completed' });
+          }
+        } catch (err) {
+          console.error('Failed to check/update request status:', err);
+          // Non-fatal - continue
+        }
+      }
+
       setModalMessage('File marked as reviewed - no redactions needed');
       setTimeout(() => goBackToRequest(), 1500);
     } catch (e) {
@@ -565,6 +585,39 @@ export function FileReviewPage() {
             comment: modified.comment ?? undefined,
           });
         }
+      }
+
+      // Check if this file should be marked as reviewed
+      // Fetch fresh detection data to verify no pending detections remain
+      try {
+        const { detections: freshDetections } = await api.listDetections(id);
+        const hasPendingDetections = freshDetections.some((d: Detection) => d.status === 'pending');
+
+        if (!hasPendingDetections && freshDetections.length > 0) {
+          // Mark this file as reviewed since all detections are processed
+          await api.markFileReviewed(id);
+        }
+
+        // Check if request should be marked as completed
+        if (requestId) {
+          const { files } = await api.listFiles(requestId);
+          const allFilesCompleted = files.every(file => {
+            // For the current file, we know it's done if we just marked it reviewed
+            if (file.id === id) {
+              return !hasPendingDetections;
+            }
+            const isReviewed = file.status === 'reviewed' || file.status === 'exported';
+            const hasCompletedDetections = (file.detection_count ?? 0) > 0 && (file.pending_count ?? 0) === 0;
+            return isReviewed || hasCompletedDetections;
+          });
+
+          if (allFilesCompleted && files.length > 0) {
+            await api.updateRequest(requestId, { status: 'completed' });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check/update file/request status:', err);
+        // Non-fatal - continue with navigation
       }
 
       // Clear local state and navigate back
