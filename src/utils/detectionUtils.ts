@@ -70,14 +70,15 @@ export function rejectDetection<T extends { id: string; status?: string | null }
 }
 
 // Approve all pending detections on a page
-export function approveAllPendingOnPage<T extends { id: string; status?: string | null; page_number?: number | null; exemption_code?: string | null }>(
+export function approveAllPendingOnPage<T extends { id: string; status?: string | null; page_number?: number | null; exemption_code?: string | null; comment?: string | null }>(
   detections: T[],
   currentPage: number,
-  exemptionCode: string
+  exemptionCode: string,
+  comment?: string | null
 ): T[] {
   return detections.map(d => {
     if (d.status === 'pending' && (d.page_number == null || d.page_number === currentPage)) {
-      return { ...d, status: 'approved', exemption_code: exemptionCode };
+      return { ...d, status: 'approved', exemption_code: exemptionCode, comment: comment ?? null };
     }
     return d;
   });
