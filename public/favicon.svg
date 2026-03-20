@@ -1,0 +1,18 @@
+<svg viewBox="0 0 100 110" xmlns="http://www.w3.org/2000/svg">
+  <path
+    d="M50 5 Q50 15 65 18 Q85 22 95 20 L95 55 Q95 95 50 105 Q5 95 5 55 L5 20 Q15 22 35 18 Q50 15 50 5 Z"
+    fill="#16A34A"
+    stroke="#15803D"
+    stroke-width="2"
+  />
+  <text
+    x="50"
+    y="60"
+    text-anchor="middle"
+    dominant-baseline="middle"
+    fill="#000000"
+    font-family="system-ui, -apple-system, sans-serif"
+    font-size="45"
+    font-weight="bold"
+  >R</text>
+</svg>
