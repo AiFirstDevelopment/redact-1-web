@@ -36,7 +36,7 @@ describe('MainPage', () => {
       renderMainPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Redact-1')).toBeInTheDocument();
+        expect(screen.getByText('R-1')).toBeInTheDocument();
         expect(screen.getByText('Springfield Police Department')).toBeInTheDocument();
       });
     });

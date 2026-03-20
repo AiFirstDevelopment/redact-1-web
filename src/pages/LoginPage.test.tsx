@@ -33,7 +33,7 @@ describe('LoginPage', () => {
   it('renders login form', () => {
     renderLoginPage();
 
-    expect(screen.getByText('Redact-1')).toBeInTheDocument();
+    expect(screen.getByText('R-1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 

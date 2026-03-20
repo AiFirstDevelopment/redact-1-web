@@ -40,7 +40,7 @@ describe('Layout', () => {
   describe('Header', () => {
     it('renders app name', () => {
       renderLayout();
-      expect(screen.getByText('Redact-1')).toBeInTheDocument();
+      expect(screen.getByText('R-1')).toBeInTheDocument();
     });
 
     it('renders agency name when available', () => {

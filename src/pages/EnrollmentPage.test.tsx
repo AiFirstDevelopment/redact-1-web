@@ -30,7 +30,7 @@ describe('EnrollmentPage', () => {
   it('renders enrollment form', () => {
     renderEnrollmentPage();
 
-    expect(screen.getByText('Redact-1')).toBeInTheDocument();
+    expect(screen.getByText('R-1')).toBeInTheDocument();
     expect(screen.getByText('Enter your department code to get started')).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/springfield/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /continue/i })).toBeInTheDocument();

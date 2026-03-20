@@ -1,4 +1,5 @@
 import { useAuthStore } from '../stores/authStore';
+import { BadgeLogo } from './BadgeLogo';
 
 type Tab = 'requests' | 'archived' | 'users' | 'settings';
 
@@ -25,8 +26,8 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
       {/* Header */}
       <header className="bg-pastel-mint shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-white">Redact-1</h1>
+          <div className="flex items-center gap-3">
+            <BadgeLogo className="w-8 h-8" />
             {agency && (
               <span className="text-sm text-white/90">{agency.name}</span>
             )}
