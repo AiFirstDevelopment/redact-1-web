@@ -6,7 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 vi.mock('@clerk/clerk-react', () => ({
   ClerkProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SignedIn: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  SignedOut: ({ children }: { children: React.ReactNode }) => null,
+  SignedOut: ({ children: _children }: { children: React.ReactNode }) => null,
   SignIn: () => <div>Sign In Form</div>,
   useAuth: () => ({
     isLoaded: true,

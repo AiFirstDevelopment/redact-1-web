@@ -638,6 +638,77 @@ class ApiService {
   }> {
     return this.fetchPublic('/api/console/users');
   }
+
+  // Admin console methods (for onboarding agencies)
+  async adminListAgencies(): Promise<{
+    agencies: Array<{
+      id: string;
+      code: string;
+      name: string;
+      default_deadline_days: number;
+      deadline_type: string;
+      created_at: number;
+      user_count: number;
+    }>;
+  }> {
+    return this.fetchPublic('/api/admin/agencies');
+  }
+
+  async adminCreateAgency(data: {
+    code: string;
+    name: string;
+    default_deadline_days?: number;
+    deadline_type?: 'business_days' | 'calendar_days';
+  }): Promise<{
+    agency: {
+      id: string;
+      code: string;
+      name: string;
+      default_deadline_days: number;
+      deadline_type: string;
+    };
+  }> {
+    const response = await fetch(`${API_BASE}/api/admin/agencies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async adminCreateSupervisor(data: {
+    email: string;
+    name: string;
+    agency_code: string;
+  }): Promise<{
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      auth_status: string;
+      agency: { id: string; code: string; name: string };
+    };
+  }> {
+    const response = await fetch(`${API_BASE}/api/admin/supervisors`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
 }
 
 export const api = new ApiService();

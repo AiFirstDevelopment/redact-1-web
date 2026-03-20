@@ -322,6 +322,16 @@ function ConfirmModal({
   );
 }
 
+interface AdminAgency {
+  id: string;
+  code: string;
+  name: string;
+  default_deadline_days: number;
+  deadline_type: string;
+  created_at: number;
+  user_count: number;
+}
+
 export function ConsolePage() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
@@ -338,6 +348,23 @@ export function ConsolePage() {
   const [showUsersModal, setShowUsersModal] = useState(false);
   const [agencies, setAgencies] = useState<Array<{ id: string; code: string; name: string; created_at: number }>>([]);
   const [users, setUsers] = useState<Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>>([]);
+
+  // Admin state
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'admin'>('monitoring');
+  const [adminAgencies, setAdminAgencies] = useState<AdminAgency[]>([]);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
+
+  // Agency form
+  const [newAgencyCode, setNewAgencyCode] = useState('');
+  const [newAgencyName, setNewAgencyName] = useState('');
+  const [newAgencyDays, setNewAgencyDays] = useState(10);
+  const [newAgencyType, setNewAgencyType] = useState<'business_days' | 'calendar_days'>('business_days');
+
+  // Supervisor form
+  const [newSupervisorEmail, setNewSupervisorEmail] = useState('');
+  const [newSupervisorName, setNewSupervisorName] = useState('');
+  const [selectedAgencyCode, setSelectedAgencyCode] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -424,6 +451,72 @@ export function ConsolePage() {
     }
   };
 
+  const fetchAdminAgencies = async () => {
+    try {
+      setAdminLoading(true);
+      const result = await api.adminListAgencies();
+      setAdminAgencies(result.agencies);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch agencies');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const handleCreateAgency = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setAdminLoading(true);
+      setError(null);
+      setAdminSuccess(null);
+      await api.adminCreateAgency({
+        code: newAgencyCode,
+        name: newAgencyName,
+        default_deadline_days: newAgencyDays,
+        deadline_type: newAgencyType,
+      });
+      setAdminSuccess(`Agency "${newAgencyCode}" created successfully`);
+      setNewAgencyCode('');
+      setNewAgencyName('');
+      setNewAgencyDays(10);
+      setNewAgencyType('business_days');
+      fetchAdminAgencies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create agency');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const handleCreateSupervisor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setAdminLoading(true);
+      setError(null);
+      setAdminSuccess(null);
+      const result = await api.adminCreateSupervisor({
+        email: newSupervisorEmail,
+        name: newSupervisorName,
+        agency_code: selectedAgencyCode,
+      });
+      setAdminSuccess(`Supervisor "${newSupervisorEmail}" created for ${result.user.agency.name}. They can now sign up at the app with this email.`);
+      setNewSupervisorEmail('');
+      setNewSupervisorName('');
+      setSelectedAgencyCode('');
+      fetchAdminAgencies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create supervisor');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'admin') {
+      fetchAdminAgencies();
+    }
+  }, [activeTab]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
@@ -443,22 +536,50 @@ export function ConsolePage() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={autoRefresh}
-              onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="rounded"
-            />
-            Auto-refresh (10s)
-          </label>
-          <button
-            onClick={fetchData}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-          >
-            Refresh Now
-          </button>
+          {activeTab === 'monitoring' && (
+            <>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh}
+                  onChange={(e) => setAutoRefresh(e.target.checked)}
+                  className="rounded"
+                />
+                Auto-refresh (10s)
+              </label>
+              <button
+                onClick={fetchData}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+              >
+                Refresh Now
+              </button>
+            </>
+          )}
         </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => setActiveTab('monitoring')}
+          className={`px-4 py-2 rounded font-medium ${
+            activeTab === 'monitoring'
+              ? 'bg-teal-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          Monitoring
+        </button>
+        <button
+          onClick={() => setActiveTab('admin')}
+          className={`px-4 py-2 rounded font-medium ${
+            activeTab === 'admin'
+              ? 'bg-teal-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          Admin
+        </button>
       </div>
 
       {error && (
@@ -467,7 +588,169 @@ export function ConsolePage() {
         </div>
       )}
 
-      {/* System Controls */}
+      {adminSuccess && (
+        <div className="bg-green-900/50 border border-green-500 text-green-200 px-4 py-3 rounded mb-6">
+          {adminSuccess}
+        </div>
+      )}
+
+      {activeTab === 'admin' ? (
+        /* Admin Tab Content */
+        <div className="grid grid-cols-2 gap-6">
+          {/* Create Agency */}
+          <Card title="Create New Agency">
+            <form onSubmit={handleCreateAgency} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Agency Code</label>
+                <input
+                  type="text"
+                  value={newAgencyCode}
+                  onChange={(e) => setNewAgencyCode(e.target.value.toUpperCase())}
+                  placeholder="e.g., DEMO, NYPD, LAPD"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Agency Name</label>
+                <input
+                  type="text"
+                  value={newAgencyName}
+                  onChange={(e) => setNewAgencyName(e.target.value)}
+                  placeholder="e.g., Demo Police Department"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Default Deadline (days)</label>
+                  <input
+                    type="number"
+                    value={newAgencyDays}
+                    onChange={(e) => setNewAgencyDays(parseInt(e.target.value) || 10)}
+                    min={1}
+                    max={365}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Deadline Type</label>
+                  <select
+                    value={newAgencyType}
+                    onChange={(e) => setNewAgencyType(e.target.value as 'business_days' | 'calendar_days')}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                  >
+                    <option value="business_days">Business Days</option>
+                    <option value="calendar_days">Calendar Days</option>
+                  </select>
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={adminLoading || !newAgencyCode || !newAgencyName}
+                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
+              >
+                {adminLoading ? 'Creating...' : 'Create Agency'}
+              </button>
+            </form>
+          </Card>
+
+          {/* Create Supervisor */}
+          <Card title="Create First Supervisor">
+            <form onSubmit={handleCreateSupervisor} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={newSupervisorEmail}
+                  onChange={(e) => setNewSupervisorEmail(e.target.value)}
+                  placeholder="supervisor@agency.gov"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Name</label>
+                <input
+                  type="text"
+                  value={newSupervisorName}
+                  onChange={(e) => setNewSupervisorName(e.target.value)}
+                  placeholder="John Smith"
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Agency</label>
+                <select
+                  value={selectedAgencyCode}
+                  onChange={(e) => setSelectedAgencyCode(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                  required
+                >
+                  <option value="">Select an agency...</option>
+                  {adminAgencies.map((agency) => (
+                    <option key={agency.id} value={agency.code}>
+                      {agency.code} - {agency.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={adminLoading || !newSupervisorEmail || !newSupervisorName || !selectedAgencyCode}
+                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
+              >
+                {adminLoading ? 'Creating...' : 'Create Supervisor'}
+              </button>
+              <p className="text-xs text-gray-500">
+                The supervisor will be created with "invited" status. They can then sign up at the app using this email address.
+              </p>
+            </form>
+          </Card>
+
+          {/* Existing Agencies */}
+          <Card title="Existing Agencies" className="col-span-2">
+            {adminLoading ? (
+              <div className="text-gray-500">Loading...</div>
+            ) : adminAgencies.length === 0 ? (
+              <div className="text-gray-500">No agencies yet. Create one above.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-400 border-b border-gray-700">
+                      <th className="pb-2">Code</th>
+                      <th className="pb-2">Name</th>
+                      <th className="pb-2">Deadline</th>
+                      <th className="pb-2">Users</th>
+                      <th className="pb-2">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminAgencies.map((agency) => (
+                      <tr key={agency.id} className="border-b border-gray-700/50">
+                        <td className="py-2 font-mono text-teal-400">{agency.code}</td>
+                        <td className="py-2">{agency.name}</td>
+                        <td className="py-2 text-gray-400">
+                          {agency.default_deadline_days} {agency.deadline_type.replace('_', ' ')}
+                        </td>
+                        <td className="py-2">{agency.user_count}</td>
+                        <td className="py-2 text-gray-500">
+                          {new Date(agency.created_at * 1000).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      ) : (
+        <>
+          {/* System Controls */}
       <div className="bg-gray-800 rounded-lg p-4 mb-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -697,6 +980,8 @@ export function ConsolePage() {
       <div className="text-center text-gray-500 text-sm">
         Redact-1 System Console | Data refreshes every 10 seconds when auto-refresh is enabled
       </div>
+        </>
+      )}
 
       {/* Confirmation Modals */}
       <ConfirmModal
