@@ -504,7 +504,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf,.mp4,.mov,.webm,.avi,video/*"
+                  accept=".pdf,.txt,.csv,.doc,.docx,text/*,image/*,video/*"
                   onChange={handleFileUpload}
                   disabled={isUploading}
                   className="hidden"

@@ -249,4 +249,47 @@ describe('RequestDetailPanel', () => {
       expect(screen.queryByText('Completed')).not.toBeInTheDocument();
     });
   });
+
+  // ============================================
+  // File Upload Input Tests
+  // ============================================
+
+  describe('file upload input', () => {
+    it('accepts PDF, text, image, and video files', async () => {
+      const { server } = await import('../test/setup');
+      const { http, HttpResponse } = await import('msw');
+
+      // Mock empty files so Upload button is visible
+      server.use(
+        http.get('https://redact-1-worker.joelstevick.workers.dev/api/requests/:requestId/files', () => {
+          return HttpResponse.json({ files: [] });
+        })
+      );
+
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText('No file uploaded yet.')).toBeInTheDocument();
+      });
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      expect(fileInput).toBeInTheDocument();
+
+      // Check PDF support
+      expect(fileInput.accept).toContain('.pdf');
+
+      // Check text file support
+      expect(fileInput.accept).toContain('.txt');
+      expect(fileInput.accept).toContain('.csv');
+      expect(fileInput.accept).toContain('.doc');
+      expect(fileInput.accept).toContain('.docx');
+      expect(fileInput.accept).toContain('text/*');
+
+      // Check image support
+      expect(fileInput.accept).toContain('image/*');
+
+      // Check video support
+      expect(fileInput.accept).toContain('video/*');
+    });
+  });
 });
