@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
-import { EnrollmentPage, LoginPage, MainPage, FileReviewPage } from './pages';
+import { EnrollmentPage, LoginPage, MainPage, FileReviewPage, VideoReviewPage } from './pages';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isEnrolled, isLoading } = useAuthStore();
@@ -85,6 +85,14 @@ function App() {
         element={
           <ProtectedRoute>
             <FileReviewPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/videos/:fileId"
+        element={
+          <ProtectedRoute>
+            <VideoReviewPage />
           </ProtectedRoute>
         }
       />

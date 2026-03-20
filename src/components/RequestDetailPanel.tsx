@@ -215,8 +215,12 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
-  const openFileReview = (fileId: string) => {
-    navigate(`/files/${fileId}?request=${request.id}`);
+  const openFileReview = (file: EvidenceFile) => {
+    if (file.file_type === 'video') {
+      navigate(`/videos/${file.id}?request=${request.id}`);
+    } else {
+      navigate(`/files/${file.id}?request=${request.id}`);
+    }
   };
 
   const handleDeleteClick = (e: React.MouseEvent, file: EvidenceFile) => {
@@ -489,18 +493,18 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
         {/* Files Section */}
         <div className="bg-card-white border rounded-lg p-4 shadow-sm">
           <div className="flex justify-between items-center mb-4">
-            <h4 className="font-semibold">File</h4>
+            <h4 className="font-semibold">Files</h4>
             {files.length === 0 && (
               <label className={`px-3 py-1.5 text-sm rounded-md cursor-pointer ${
                 isUploading
                   ? 'bg-gray-300 text-gray-500'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}>
-                {isUploading ? 'Uploading...' : 'Upload PDF'}
+                {isUploading ? 'Uploading...' : 'Upload File'}
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.mp4,.mov,.webm,.avi,video/*"
                   onChange={handleFileUpload}
                   disabled={isUploading}
                   className="hidden"
@@ -518,13 +522,19 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
               {files.map((file) => (
                 <div
                   key={file.id}
-                  onClick={() => openFileReview(file.id)}
+                  onClick={() => openFileReview(file)}
                   className="flex items-center gap-3 p-3 border rounded-lg hover:border-blue-300 cursor-pointer transition-colors"
                 >
                   <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
+                    {file.file_type === 'video' ? (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

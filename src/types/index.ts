@@ -39,11 +39,13 @@ export interface EvidenceFile {
   id: string;
   request_id: string;
   filename: string;
-  file_type: 'image' | 'pdf';
+  file_type: 'image' | 'pdf' | 'video';
   mime_type: string;
   file_size: number;
-  original_r2_key: string;
+  original_r2_key: string | null;
+  original_s3_key: string | null;
   redacted_r2_key: string | null;
+  redacted_s3_key: string | null;
   status: 'uploaded' | 'processing' | 'detected' | 'reviewed' | 'exported';
   uploaded_by: string;
   created_at: number;
@@ -125,6 +127,48 @@ export interface ManualRedaction {
   page_number: number | null;
   created_by: string;
   created_at: number;
+}
+
+export interface VideoJob {
+  id: string;
+  file_id: string;
+  job_type: 'detection' | 'redaction';
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  error_message: string | null;
+  aws_job_id: string | null;
+  frame_rate: number | null;
+  duration_seconds: number | null;
+  total_frames: number | null;
+  started_at: number | null;
+  completed_at: number | null;
+  created_by: string;
+  created_at: number;
+}
+
+export interface VideoDetection {
+  id: string;
+  file_id: string;
+  detection_type: 'face' | 'plate' | 'manual';
+  start_time_ms: number;
+  end_time_ms: number;
+  bbox_x: number;
+  bbox_y: number;
+  bbox_width: number;
+  bbox_height: number;
+  track_id: string | null;
+  confidence: number | null;
+  status: 'pending' | 'approved' | 'rejected';
+  exemption_code: string | null;
+  comment: string | null;
+  reviewed_by: string | null;
+  reviewed_at: number | null;
+  created_at: number;
+}
+
+export interface VideoTrack {
+  track_id: string;
+  count: number;
 }
 
 export interface AuditLog {

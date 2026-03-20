@@ -42,7 +42,9 @@ export const mockFile = {
   mime_type: 'application/pdf',
   file_size: 1024,
   original_r2_key: 'files/test.pdf',
+  original_s3_key: null,
   redacted_r2_key: null,
+  redacted_s3_key: null,
   status: 'uploaded' as const,
   uploaded_by: 'user-1',
   created_at: Date.now(),
@@ -216,6 +218,22 @@ export const handlers = [
     });
   }),
 
+  http.get(`${API_BASE}/api/requests/:id/audit`, () => {
+    return HttpResponse.json({
+      audit_logs: [
+        {
+          id: 'audit-1',
+          user_id: 'user-1',
+          action: 'create',
+          entity_type: 'request',
+          entity_id: 'req-1',
+          details: null,
+          created_at: Date.now(),
+        },
+      ],
+    });
+  }),
+
   // Files
   http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
     return HttpResponse.json({ files: [mockFile] });
@@ -223,6 +241,15 @@ export const handlers = [
 
   http.post(`${API_BASE}/api/requests/:requestId/files`, () => {
     return HttpResponse.json({ file: mockFile }, { status: 201 });
+  }),
+
+  http.get(`${API_BASE}/api/files/:id`, ({ params }) => {
+    return HttpResponse.json({
+      file: {
+        ...mockFile,
+        id: params.id as string,
+      },
+    });
   }),
 
   http.get(`${API_BASE}/api/files/:id/original`, () => {
@@ -300,5 +327,139 @@ export const handlers = [
 
   http.delete(`${API_BASE}/api/users/:id`, () => {
     return HttpResponse.json({ success: true });
+  }),
+
+  // Video routes
+  http.post(`${API_BASE}/api/requests/:requestId/videos`, () => {
+    return HttpResponse.json({
+      file: {
+        ...mockFile,
+        id: 'video-1',
+        filename: 'test-video.mp4',
+        file_type: 'video',
+        mime_type: 'video/mp4',
+        original_s3_key: 'videos/test.mp4',
+        original_r2_key: null,
+      },
+    }, { status: 201 });
+  }),
+
+  http.post(`${API_BASE}/api/files/:fileId/video/detect`, () => {
+    return HttpResponse.json({
+      job: {
+        id: 'job-1',
+        file_id: 'file-1',
+        job_type: 'detection',
+        status: 'pending',
+        progress: 0,
+        created_at: Date.now(),
+      },
+    }, { status: 201 });
+  }),
+
+  http.get(`${API_BASE}/api/files/:fileId/video/job`, () => {
+    return HttpResponse.json({
+      job: {
+        id: 'job-1',
+        file_id: 'file-1',
+        job_type: 'detection',
+        status: 'completed',
+        progress: 100,
+        duration_seconds: 120,
+        frame_rate: 30,
+        created_at: Date.now(),
+      },
+    });
+  }),
+
+  http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+    return HttpResponse.json({
+      detections: [
+        {
+          id: 'vdet-1',
+          file_id: 'file-1',
+          detection_type: 'face',
+          start_time_ms: 0,
+          end_time_ms: 5000,
+          bbox_x: 0.1,
+          bbox_y: 0.1,
+          bbox_width: 0.2,
+          bbox_height: 0.2,
+          track_id: 'face-001',
+          confidence: 0.95,
+          status: 'pending',
+          created_at: Date.now(),
+        },
+      ],
+      tracks: [{ track_id: 'face-001', count: 1 }],
+    });
+  }),
+
+  http.post(`${API_BASE}/api/files/:fileId/video/detections`, async ({ request }) => {
+    const body = await request.json() as any;
+    return HttpResponse.json({
+      detection: {
+        id: 'vdet-new',
+        ...body,
+        status: body.detection_type === 'manual' ? 'approved' : 'pending',
+        created_at: Date.now(),
+      },
+    }, { status: 201 });
+  }),
+
+  http.put(`${API_BASE}/api/video-detections/:id`, async ({ params, request }) => {
+    const body = await request.json() as any;
+    return HttpResponse.json({
+      detection: {
+        id: params.id,
+        file_id: 'file-1',
+        detection_type: 'face',
+        start_time_ms: 0,
+        end_time_ms: 5000,
+        bbox_x: 0.1,
+        bbox_y: 0.1,
+        bbox_width: 0.2,
+        bbox_height: 0.2,
+        track_id: 'face-001',
+        ...body,
+        reviewed_by: 'user-1',
+        reviewed_at: Date.now(),
+        created_at: Date.now(),
+      },
+    });
+  }),
+
+  http.put(`${API_BASE}/api/files/:fileId/video/detections/bulk`, async ({ request }) => {
+    const body = await request.json() as any;
+    return HttpResponse.json({
+      success: true,
+      count: 5,
+      track_id: body.track_id || null,
+    });
+  }),
+
+  http.delete(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+    return HttpResponse.json({ success: true });
+  }),
+
+  http.post(`${API_BASE}/api/files/:fileId/video/redact`, () => {
+    return HttpResponse.json({
+      job: {
+        id: 'job-2',
+        file_id: 'file-1',
+        job_type: 'redaction',
+        status: 'pending',
+        progress: 0,
+        created_at: Date.now(),
+      },
+    }, { status: 201 });
+  }),
+
+  http.get(`${API_BASE}/api/files/:fileId/video/stream`, () => {
+    return HttpResponse.json({ url: 'https://s3.example.com/presigned-video-url' });
+  }),
+
+  http.get(`${API_BASE}/api/files/:fileId/video/stream/redacted`, () => {
+    return HttpResponse.json({ url: 'https://s3.example.com/presigned-redacted-url' });
   }),
 ];

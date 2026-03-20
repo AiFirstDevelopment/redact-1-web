@@ -93,7 +93,13 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   uploadFile: async (requestId: string, file: File) => {
     set({ isLoading: true, error: null });
     try {
-      const { file: uploadedFile } = await api.uploadFile(requestId, file);
+      // Check if this is a video file
+      const isVideo = file.type.startsWith('video/') ||
+        ['.mp4', '.mov', '.webm', '.avi'].some(ext => file.name.toLowerCase().endsWith(ext));
+
+      const { file: uploadedFile } = isVideo
+        ? await api.uploadVideo(requestId, file)
+        : await api.uploadFile(requestId, file);
       set((state) => ({ files: [...state.files, uploadedFile], isLoading: false }));
       return uploadedFile;
     } catch (e) {

@@ -55,11 +55,11 @@ describe('RequestDetailPanel', () => {
     expect(screen.getByText(/request date/i)).toBeInTheDocument();
   });
 
-  it('renders File section', async () => {
+  it('renders Files section', async () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByText('File')).toBeInTheDocument();
+      expect(screen.getByText('Files')).toBeInTheDocument();
     });
   });
 

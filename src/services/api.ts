@@ -1,4 +1,4 @@
-import type { User, Request, RequestTimeline, EvidenceFile, Detection, ManualRedaction, LoginResponse, AuditLog } from '../types';
+import type { User, Request, RequestTimeline, EvidenceFile, Detection, ManualRedaction, LoginResponse, AuditLog, VideoJob, VideoDetection, VideoTrack } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev';
 
@@ -298,6 +298,105 @@ class ApiService {
 
   async deleteUser(id: string): Promise<{ success: boolean }> {
     return this.fetch(`/api/users/${id}`, { method: 'DELETE' });
+  }
+
+  // Video methods
+  async uploadVideo(requestId: string, file: File): Promise<{ file: EvidenceFile }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = this.getToken();
+    const response = await fetch(`${API_BASE}/api/requests/${requestId}/videos`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(error.error);
+    }
+
+    return response.json();
+  }
+
+  async startVideoDetection(fileId: string): Promise<{ job: VideoJob }> {
+    return this.fetch(`/api/files/${fileId}/video/detect`, { method: 'POST' });
+  }
+
+  async getVideoJobStatus(fileId: string): Promise<{ job: VideoJob }> {
+    return this.fetch(`/api/files/${fileId}/video/job`);
+  }
+
+  async listVideoDetections(fileId: string, params?: { track_id?: string; status?: string }): Promise<{ detections: VideoDetection[]; tracks: VideoTrack[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.track_id) searchParams.set('track_id', params.track_id);
+    if (params?.status) searchParams.set('status', params.status);
+    const query = searchParams.toString();
+    return this.fetch(`/api/files/${fileId}/video/detections${query ? `?${query}` : ''}`);
+  }
+
+  async createVideoDetection(fileId: string, data: {
+    detection_type: 'face' | 'plate' | 'manual';
+    start_time_ms: number;
+    end_time_ms: number;
+    bbox_x: number;
+    bbox_y: number;
+    bbox_width: number;
+    bbox_height: number;
+    track_id?: string;
+    exemption_code?: string;
+    comment?: string;
+  }): Promise<{ detection: VideoDetection }> {
+    return this.fetch(`/api/files/${fileId}/video/detections`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateVideoDetection(id: string, data: {
+    status?: 'pending' | 'approved' | 'rejected';
+    bbox_x?: number;
+    bbox_y?: number;
+    bbox_width?: number;
+    bbox_height?: number;
+    start_time_ms?: number;
+    end_time_ms?: number;
+    exemption_code?: string;
+    comment?: string;
+  }): Promise<{ detection: VideoDetection }> {
+    return this.fetch(`/api/video-detections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async bulkUpdateVideoDetections(fileId: string, data: {
+    track_id?: string;
+    status: 'approved' | 'rejected';
+    exemption_code?: string;
+    comment?: string;
+  }): Promise<{ success: boolean; count: number; track_id: string | null }> {
+    return this.fetch(`/api/files/${fileId}/video/detections/bulk`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async clearVideoDetections(fileId: string): Promise<{ success: boolean }> {
+    return this.fetch(`/api/files/${fileId}/video/detections`, { method: 'DELETE' });
+  }
+
+  async startVideoRedaction(fileId: string): Promise<{ job: VideoJob }> {
+    return this.fetch(`/api/files/${fileId}/video/redact`, { method: 'POST' });
+  }
+
+  async getVideoStreamUrl(fileId: string): Promise<{ url: string }> {
+    return this.fetch(`/api/files/${fileId}/video/stream`);
+  }
+
+  async getRedactedVideoStreamUrl(fileId: string): Promise<{ url: string }> {
+    return this.fetch(`/api/files/${fileId}/video/stream/redacted`);
   }
 }
 
