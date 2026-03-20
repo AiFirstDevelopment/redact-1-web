@@ -92,10 +92,13 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function Card({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
+function Card({ title, children, className = '', headerAction }: { title: string; children: React.ReactNode; className?: string; headerAction?: React.ReactNode }) {
   return (
     <div className={`bg-gray-800 rounded-lg p-4 ${className}`}>
-      <h3 className="text-sm font-medium text-gray-400 mb-3">{title}</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-gray-400">{title}</h3>
+        {headerAction}
+      </div>
       {children}
     </div>
   );
@@ -346,6 +349,10 @@ export function ConsolePage() {
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [showAgenciesModal, setShowAgenciesModal] = useState(false);
   const [showUsersModal, setShowUsersModal] = useState(false);
+  const [showCreateAgencyModal, setShowCreateAgencyModal] = useState(false);
+  const [showCreateSupervisorModal, setShowCreateSupervisorModal] = useState(false);
+  const [showAgencyUsersModal, setShowAgencyUsersModal] = useState(false);
+  const [agencyUsers, setAgencyUsers] = useState<Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>>([]);
   const [agencies, setAgencies] = useState<Array<{ id: string; code: string; name: string; created_at: number }>>([]);
   const [users, setUsers] = useState<Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>>([]);
 
@@ -451,6 +458,24 @@ export function ConsolePage() {
     }
   };
 
+  const handleShowAgencyUsers = async (agencyCode: string) => {
+    try {
+      setSelectedAgencyCode(agencyCode);
+      const result = await api.consoleGetRecentUsers();
+      // Filter users by agency
+      const filtered = result.users.filter(u => u.agency_name === adminAgencies.find(a => a.code === agencyCode)?.name);
+      setAgencyUsers(filtered);
+      setShowAgencyUsersModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch users');
+    }
+  };
+
+  const handleAddSupervisor = (agencyCode: string) => {
+    setSelectedAgencyCode(agencyCode);
+    setShowCreateSupervisorModal(true);
+  };
+
   const fetchAdminAgencies = async () => {
     try {
       setAdminLoading(true);
@@ -480,6 +505,7 @@ export function ConsolePage() {
       setNewAgencyName('');
       setNewAgencyDays(10);
       setNewAgencyType('business_days');
+      setShowCreateAgencyModal(false);
       fetchAdminAgencies();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create agency');
@@ -502,6 +528,7 @@ export function ConsolePage() {
       setAdminSuccess(`Supervisor "${newSupervisorEmail}" created for ${result.user.agency.name}. They can now sign up at the app with this email.`);
       setNewSupervisorEmail('');
       setNewSupervisorName('');
+      setShowCreateSupervisorModal(false);
       setSelectedAgencyCode('');
       fetchAdminAgencies();
     } catch (err) {
@@ -596,126 +623,24 @@ export function ConsolePage() {
 
       {activeTab === 'admin' ? (
         /* Admin Tab Content */
-        <div className="grid grid-cols-2 gap-6">
-          {/* Create Agency */}
-          <Card title="Create New Agency">
-            <form onSubmit={handleCreateAgency} className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Agency Code</label>
-                <input
-                  type="text"
-                  value={newAgencyCode}
-                  onChange={(e) => setNewAgencyCode(e.target.value.toUpperCase())}
-                  placeholder="e.g., DEMO, NYPD, LAPD"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Agency Name</label>
-                <input
-                  type="text"
-                  value={newAgencyName}
-                  onChange={(e) => setNewAgencyName(e.target.value)}
-                  placeholder="e.g., Demo Police Department"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">Default Deadline (days)</label>
-                  <input
-                    type="number"
-                    value={newAgencyDays}
-                    onChange={(e) => setNewAgencyDays(parseInt(e.target.value) || 10)}
-                    min={1}
-                    max={365}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-400 mb-1">Deadline Type</label>
-                  <select
-                    value={newAgencyType}
-                    onChange={(e) => setNewAgencyType(e.target.value as 'business_days' | 'calendar_days')}
-                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                  >
-                    <option value="business_days">Business Days</option>
-                    <option value="calendar_days">Calendar Days</option>
-                  </select>
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={adminLoading || !newAgencyCode || !newAgencyName}
-                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
-              >
-                {adminLoading ? 'Creating...' : 'Create Agency'}
-              </button>
-            </form>
-          </Card>
-
-          {/* Create Supervisor */}
-          <Card title="Create First Supervisor">
-            <form onSubmit={handleCreateSupervisor} className="space-y-4">
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={newSupervisorEmail}
-                  onChange={(e) => setNewSupervisorEmail(e.target.value)}
-                  placeholder="supervisor@agency.gov"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Name</label>
-                <input
-                  type="text"
-                  value={newSupervisorName}
-                  onChange={(e) => setNewSupervisorName(e.target.value)}
-                  placeholder="John Smith"
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-400 mb-1">Agency</label>
-                <select
-                  value={selectedAgencyCode}
-                  onChange={(e) => setSelectedAgencyCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
-                  required
-                >
-                  <option value="">Select an agency...</option>
-                  {adminAgencies.map((agency) => (
-                    <option key={agency.id} value={agency.code}>
-                      {agency.code} - {agency.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                type="submit"
-                disabled={adminLoading || !newSupervisorEmail || !newSupervisorName || !selectedAgencyCode}
-                className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
-              >
-                {adminLoading ? 'Creating...' : 'Create Supervisor'}
-              </button>
-              <p className="text-xs text-gray-500">
-                The supervisor will be created with "invited" status. They can then sign up at the app using this email address.
-              </p>
-            </form>
-          </Card>
-
+        <div className="space-y-6">
           {/* Existing Agencies */}
-          <Card title="Existing Agencies" className="col-span-2">
+          <Card
+            title="Agencies"
+            headerAction={
+              <button
+                onClick={() => setShowCreateAgencyModal(true)}
+                className="w-7 h-7 flex items-center justify-center bg-teal-600 hover:bg-teal-500 rounded-full text-white text-xl font-bold leading-none"
+                title="Add new agency"
+              >
+                +
+              </button>
+            }
+          >
             {adminLoading ? (
               <div className="text-gray-500">Loading...</div>
             ) : adminAgencies.length === 0 ? (
-              <div className="text-gray-500">No agencies yet. Create one above.</div>
+              <div className="text-gray-500">No agencies yet. Click (+) to create one.</div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -724,19 +649,55 @@ export function ConsolePage() {
                       <th className="pb-2">Code</th>
                       <th className="pb-2">Name</th>
                       <th className="pb-2">Deadline</th>
-                      <th className="pb-2">Users</th>
+                      <th className="pb-2">
+                        <span className="inline-flex items-center gap-2">
+                          Users
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (adminAgencies.length === 1) {
+                                handleAddSupervisor(adminAgencies[0].code);
+                              }
+                            }}
+                            className="w-5 h-5 flex items-center justify-center bg-teal-600 hover:bg-teal-500 rounded-full text-white text-sm font-bold leading-none"
+                            title="Add supervisor"
+                          >
+                            +
+                          </button>
+                        </span>
+                      </th>
                       <th className="pb-2">Created</th>
                     </tr>
                   </thead>
                   <tbody>
                     {adminAgencies.map((agency) => (
-                      <tr key={agency.id} className="border-b border-gray-700/50">
+                      <tr
+                        key={agency.id}
+                        className="border-b border-gray-700/50"
+                      >
                         <td className="py-2 font-mono text-teal-400">{agency.code}</td>
                         <td className="py-2">{agency.name}</td>
                         <td className="py-2 text-gray-400">
                           {agency.default_deadline_days} {agency.deadline_type.replace('_', ' ')}
                         </td>
-                        <td className="py-2">{agency.user_count}</td>
+                        <td className="py-2">
+                          <span className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() => handleShowAgencyUsers(agency.code)}
+                              className="text-teal-400 hover:text-teal-300 hover:underline"
+                              title="View users"
+                            >
+                              {agency.user_count}
+                            </button>
+                            <button
+                              onClick={() => handleAddSupervisor(agency.code)}
+                              className="w-5 h-5 flex items-center justify-center bg-teal-600 hover:bg-teal-500 rounded-full text-white text-sm font-bold leading-none"
+                              title={`Add supervisor to ${agency.code}`}
+                            >
+                              +
+                            </button>
+                          </span>
+                        </td>
                         <td className="py-2 text-gray-500">
                           {new Date(agency.created_at * 1000).toLocaleDateString()}
                         </td>
@@ -1042,6 +1003,196 @@ export function ConsolePage() {
           </div>
         )}
       />
+
+      {/* Create Agency Modal */}
+      {showCreateAgencyModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg w-full max-w-lg mx-4 shadow-xl border border-gray-700">
+            <div className="flex justify-between items-center p-4 border-b border-gray-700">
+              <h3 className="text-xl font-bold text-white">Create New Agency</h3>
+              <button
+                onClick={() => setShowCreateAgencyModal(false)}
+                className="text-gray-400 hover:text-white text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleCreateAgency} className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Agency Code</label>
+                  <input
+                    type="text"
+                    value={newAgencyCode}
+                    onChange={(e) => setNewAgencyCode(e.target.value.toUpperCase())}
+                    placeholder="e.g., DEMO, NYPD, LAPD"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Agency Name</label>
+                  <input
+                    type="text"
+                    value={newAgencyName}
+                    onChange={(e) => setNewAgencyName(e.target.value)}
+                    placeholder="e.g., Demo Police Department"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Default Deadline (days)</label>
+                  <input
+                    type="number"
+                    value={newAgencyDays}
+                    onChange={(e) => setNewAgencyDays(parseInt(e.target.value) || 10)}
+                    min={1}
+                    max={365}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Deadline Type</label>
+                  <select
+                    value={newAgencyType}
+                    onChange={(e) => setNewAgencyType(e.target.value as 'business_days' | 'calendar_days')}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                  >
+                    <option value="business_days">Business Days</option>
+                    <option value="calendar_days">Calendar Days</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateAgencyModal(false)}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adminLoading || !newAgencyCode || !newAgencyName}
+                  className="px-6 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
+                >
+                  {adminLoading ? 'Creating...' : 'Create Agency'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Supervisor Modal */}
+      {showCreateSupervisorModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg w-full max-w-lg mx-4 shadow-xl border border-gray-700">
+            <div className="flex justify-between items-center p-4 border-b border-gray-700">
+              <h3 className="text-xl font-bold text-white">Add Supervisor to {selectedAgencyCode}</h3>
+              <button
+                onClick={() => {
+                  setShowCreateSupervisorModal(false);
+                  setSelectedAgencyCode('');
+                }}
+                className="text-gray-400 hover:text-white text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleCreateSupervisor} className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={newSupervisorEmail}
+                    onChange={(e) => setNewSupervisorEmail(e.target.value)}
+                    placeholder="supervisor@agency.gov"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={newSupervisorName}
+                    onChange={(e) => setNewSupervisorName(e.target.value)}
+                    placeholder="John Smith"
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
+                    required
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                The supervisor will be created with "invited" status. They can then sign up at the app using this email address.
+              </p>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateSupervisorModal(false);
+                    setSelectedAgencyCode('');
+                  }}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adminLoading || !newSupervisorEmail || !newSupervisorName}
+                  className="px-6 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
+                >
+                  {adminLoading ? 'Creating...' : 'Create Supervisor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Agency Users Modal */}
+      {showAgencyUsersModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-lg w-full max-w-2xl mx-4 shadow-xl border border-gray-700 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b border-gray-700">
+              <h3 className="text-xl font-bold text-white">Users in {selectedAgencyCode}</h3>
+              <button
+                onClick={() => {
+                  setShowAgencyUsersModal(false);
+                  setSelectedAgencyCode('');
+                }}
+                className="text-gray-400 hover:text-white text-2xl leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 p-4">
+              {agencyUsers.length === 0 ? (
+                <div className="text-gray-500 text-center py-8">No users found</div>
+              ) : (
+                <div className="space-y-2">
+                  {agencyUsers.map((user) => (
+                    <div key={user.id} className="bg-gray-700/50 rounded p-3 flex justify-between items-center">
+                      <div>
+                        <div className="text-white font-medium">{user.name || user.email}</div>
+                        <div className="text-gray-400 text-sm">
+                          {user.email} · {user.role}
+                        </div>
+                      </div>
+                      <div className="text-gray-500 text-xs">
+                        {new Date(user.created_at * 1000).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
