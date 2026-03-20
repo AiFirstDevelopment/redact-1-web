@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useClerk } from '@clerk/clerk-react';
 import { useAuthStore } from '../stores/authStore';
 import { api } from '../services/api';
 
 export function SettingsPanel() {
-  const { user, agency, logout } = useAuthStore();
+  const { user, agency } = useAuthStore();
+  const { signOut } = useClerk();
   const [deadlineDays, setDeadlineDays] = useState(10);
   const [deadlineType, setDeadlineType] = useState<'business_days' | 'calendar_days'>('business_days');
   const [initialDays, setInitialDays] = useState(10);
@@ -48,7 +50,7 @@ export function SettingsPanel() {
   };
 
   const handleSignOut = async () => {
-    await logout();
+    await signOut();
   };
 
   const handleChangeDepartment = async () => {

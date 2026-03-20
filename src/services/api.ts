@@ -1,4 +1,4 @@
-import type { User, Request, RequestTimeline, EvidenceFile, Detection, ManualRedaction, LoginResponse, AuditLog, VideoJob, VideoDetection, VideoTrack } from '../types';
+import type { User, Request, RequestTimeline, EvidenceFile, Detection, ManualRedaction, AuditLog, VideoJob, VideoDetection, VideoTrack } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev';
 
@@ -7,17 +7,9 @@ class ApiService {
 
   setToken(token: string | null) {
     this.token = token;
-    if (token) {
-      localStorage.setItem('token', token);
-    } else {
-      localStorage.removeItem('token');
-    }
   }
 
   getToken(): string | null {
-    if (!this.token) {
-      this.token = localStorage.getItem('token');
-    }
     return this.token;
   }
 
@@ -59,19 +51,9 @@ class ApiService {
     return response.json();
   }
 
-  // Auth
-  async login(email: string, password: string): Promise<LoginResponse> {
-    const data = await this.fetch<LoginResponse>('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-    this.setToken(data.token);
-    return data;
-  }
-
-  async logout(): Promise<void> {
-    await this.fetch('/api/auth/logout', { method: 'POST' });
-    this.setToken(null);
+  // Auth - Clerk handles sign-in, we just sync with backend
+  async syncUser(): Promise<{ user: User; agency?: { id: string; code: string; name: string; default_deadline_days: number; deadline_type: 'business_days' | 'calendar_days' } }> {
+    return this.fetch('/api/auth/sync', { method: 'POST' });
   }
 
   async me(): Promise<{ user: User; agency?: { id: string; code: string; name: string; default_deadline_days: number; deadline_type: 'business_days' | 'calendar_days' } }> {

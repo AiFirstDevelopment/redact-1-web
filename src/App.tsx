@@ -1,12 +1,21 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { SignedIn, SignedOut, SignIn, useAuth, useUser } from '@clerk/clerk-react';
 import { useAuthStore } from './stores/authStore';
-import { EnrollmentPage, LoginPage, MainPage, FileReviewPage, VideoReviewPage, ConsolePage } from './pages';
+import { EnrollmentPage, MainPage, FileReviewPage, VideoReviewPage, ConsolePage } from './pages';
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isEnrolled, isLoading } = useAuthStore();
+function AuthSync({ children }: { children: React.ReactNode }) {
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { user: clerkUser } = useUser();
+  const { syncWithClerk, isLoading, agency } = useAuthStore();
 
-  if (isLoading) {
+  useEffect(() => {
+    if (isLoaded && isSignedIn && clerkUser) {
+      syncWithClerk(getToken);
+    }
+  }, [isLoaded, isSignedIn, clerkUser, getToken, syncWithClerk]);
+
+  if (!isLoaded || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-gray-500">Loading...</div>
@@ -14,91 +23,50 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isEnrolled) {
-    return <Navigate to="/enroll" replace />;
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <>{children}</>;
-}
-
-function PublicRoute({ children, requireEnrolled = false }: { children: React.ReactNode; requireEnrolled?: boolean }) {
-  const { isAuthenticated, isEnrolled, isLoading } = useAuthStore();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-gray-500">Loading...</div>
-      </div>
-    );
-  }
-
-  if (requireEnrolled && !isEnrolled) {
-    return <Navigate to="/enroll" replace />;
-  }
-
-  if (isAuthenticated && isEnrolled) {
-    return <Navigate to="/" replace />;
+  // User is signed in but not enrolled in an agency
+  if (isSignedIn && !agency) {
+    return <EnrollmentPage />;
   }
 
   return <>{children}</>;
 }
 
 function App() {
-  const { checkAuth } = useAuthStore();
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-
   return (
     <Routes>
       <Route
-        path="/enroll"
+        path="/sign-in/*"
         element={
-          <PublicRoute>
-            <EnrollmentPage />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/login"
-        element={
-          <PublicRoute requireEnrolled>
-            <LoginPage />
-          </PublicRoute>
-        }
-      />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <MainPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/files/:id"
-        element={
-          <ProtectedRoute>
-            <FileReviewPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/videos/:fileId"
-        element={
-          <ProtectedRoute>
-            <VideoReviewPage />
-          </ProtectedRoute>
+          <SignedOut>
+            <div className="min-h-screen flex items-center justify-center bg-gray-100">
+              <SignIn routing="path" path="/sign-in" />
+            </div>
+          </SignedOut>
         }
       />
       <Route
         path="/console"
         element={<ConsolePage />}
+      />
+      <Route
+        path="/*"
+        element={
+          <>
+            <SignedOut>
+              <Navigate to="/sign-in" replace />
+            </SignedOut>
+            <SignedIn>
+              <AuthSync>
+                <Routes>
+                  <Route path="/" element={<MainPage />} />
+                  <Route path="/files/:id" element={<FileReviewPage />} />
+                  <Route path="/videos/:fileId" element={<VideoReviewPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </AuthSync>
+            </SignedIn>
+          </>
+        }
       />
     </Routes>
   );

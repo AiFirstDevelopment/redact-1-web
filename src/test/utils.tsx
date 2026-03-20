@@ -15,16 +15,12 @@ interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
 
 // Reset all Zustand stores
 export function resetStores() {
-  // Clear localStorage first
-  localStorage.clear();
-
   useAuthStore.setState({
     user: null,
     agency: null,
-    isAuthenticated: false,
-    isEnrolled: false,
     isLoading: false,
     error: null,
+    getToken: null,
   }, true); // Replace state entirely
 
   useRequestStore.setState({
@@ -46,28 +42,23 @@ export function resetStores() {
 
 // Setup authenticated state
 export function setupAuthenticatedState() {
-  localStorage.setItem('token', 'mock-token');
-  localStorage.setItem('agency', JSON.stringify(mockAgency));
   useAuthStore.setState({
     user: mockUser,
     agency: mockAgency,
-    isAuthenticated: true,
-    isEnrolled: true,
     isLoading: false,
     error: null,
+    getToken: async () => 'mock-token',
   }, true);
 }
 
 // Setup enrolled but not authenticated state
 export function setupEnrolledState() {
-  localStorage.setItem('agency', JSON.stringify(mockAgency));
   useAuthStore.setState({
     user: null,
     agency: mockAgency,
-    isAuthenticated: false,
-    isEnrolled: true,
     isLoading: false,
     error: null,
+    getToken: null,
   }, true);
 }
 

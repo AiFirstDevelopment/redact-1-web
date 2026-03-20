@@ -1,3 +1,4 @@
+import { useClerk } from '@clerk/clerk-react';
 import { useAuthStore } from '../stores/authStore';
 import { BadgeLogo } from './BadgeLogo';
 
@@ -11,7 +12,8 @@ interface LayoutProps {
 }
 
 export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutProps) {
-  const { user, logout, agency } = useAuthStore();
+  const { user, agency } = useAuthStore();
+  const { signOut } = useClerk();
   const isSupervisor = user?.role === 'supervisor';
 
   const tabs: { id: Tab; label: string; supervisorOnly?: boolean }[] = [
@@ -35,7 +37,7 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
           <div className="flex items-center gap-4">
             <span className="text-white">{user?.name}</span>
             <button
-              onClick={logout}
+              onClick={() => signOut()}
               className="text-white/80 hover:text-white text-sm"
             >
               Sign Out

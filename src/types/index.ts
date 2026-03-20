@@ -1,8 +1,12 @@
+export type AuthStatus = 'pending' | 'invited' | 'active' | 'suspended';
+
 export interface User {
   id: string;
   email: string;
   name: string;
   role: 'clerk' | 'supervisor';
+  auth_status?: AuthStatus;
+  clerk_user_id?: string;
 }
 
 export interface Request {
@@ -190,8 +194,3 @@ export interface Agency {
   deadline_type: 'business_days' | 'calendar_days';
 }
 
-export interface LoginResponse {
-  token: string;
-  user: User;
-  agency?: Agency;
-}

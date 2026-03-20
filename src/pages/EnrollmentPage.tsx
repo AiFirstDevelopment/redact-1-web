@@ -12,7 +12,7 @@ export function EnrollmentPage() {
     e.preventDefault();
     try {
       await enroll(departmentCode);
-      navigate('/login');
+      navigate('/');
     } catch {
       // Error is handled by store
     }
