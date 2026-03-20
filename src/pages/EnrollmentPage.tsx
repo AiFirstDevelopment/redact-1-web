@@ -5,7 +5,7 @@ import { BadgeLogo } from '../components/BadgeLogo';
 
 export function EnrollmentPage() {
   const [departmentCode, setDepartmentCode] = useState('');
-  const { enroll, isLoading, error, clearError } = useAuthStore();
+  const { enroll, isLoading, error } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -16,11 +16,6 @@ export function EnrollmentPage() {
     } catch {
       // Error is handled by store
     }
-  };
-
-  const handleDemo = () => {
-    setDepartmentCode('SPRINGFIELD-PD');
-    clearError();
   };
 
   return (
@@ -56,23 +51,6 @@ export function EnrollmentPage() {
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {isLoading ? 'Verifying...' : 'Continue'}
-          </button>
-
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/30" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-pastel-mint text-white/70">or</span>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleDemo}
-            className="w-full bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 border border-gray-300"
-          >
-            Use Demo Department
           </button>
         </form>
       </div>
