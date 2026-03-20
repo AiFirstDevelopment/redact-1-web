@@ -171,6 +171,7 @@ export function FileReviewPage() {
   };
 
   const [detectingPage, setDetectingPage] = useState<number | null>(null);
+  const detectionCancelledRef = useRef(false);
 
   // Extract text with positions and detect PII
   const detectPiiInPage = async (pdf: pdfjsLib.PDFDocumentProxy, pageNum: number): Promise<PiiMatch[]> => {
@@ -249,6 +250,8 @@ export function FileReviewPage() {
   const handleDetect = async () => {
     if (!id) return;
 
+    detectionCancelledRef.current = false;
+
     try {
       console.log('[Detection] Starting detection for file:', id);
       const newLocalDetections: typeof localDetections = [];
@@ -256,6 +259,13 @@ export function FileReviewPage() {
       if (pdfDoc) {
         // Process ALL pages of the PDF
         for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          // Check if cancelled
+          if (detectionCancelledRef.current) {
+            console.log('[Detection] Cancelled by user');
+            setDetectingPage(null);
+            return;
+          }
+
           setDetectingPage(pageNum);
           console.log(`[Detection] Processing page ${pageNum} of ${totalPages}`);
 
@@ -348,6 +358,10 @@ export function FileReviewPage() {
       setDetectingPage(null);
       setModalMessage(`Detection failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
+  };
+
+  const handleCancelDetection = () => {
+    detectionCancelledRef.current = true;
   };
 
   // Click on detection = select it and show toolbar
@@ -929,17 +943,32 @@ export function FileReviewPage() {
             {/* Detecting Overlay */}
             {(isLoading || detectingPage !== null) && (
               <div className="absolute inset-0 bg-[#18181F]/75 flex flex-col items-center justify-center">
-                <div className="w-44 h-2 bg-gray-700 rounded overflow-hidden mb-4">
-                  <div
-                    className="h-full bg-[#B5594C] transition-all duration-300"
-                    style={{ width: detectingPage !== null ? `${(detectingPage / totalPages) * 100}%` : '100%' }}
-                  />
+                <div className="w-64">
+                  <div className="flex justify-between text-sm text-gray-300 mb-2">
+                    <span>
+                      {detectingPage !== null
+                        ? `Detecting page ${detectingPage} of ${totalPages}...`
+                        : 'Detecting sensitive content...'}
+                    </span>
+                    {detectingPage !== null && (
+                      <span>{Math.round((detectingPage / totalPages) * 100)}%</span>
+                    )}
+                  </div>
+                  <div className="w-full h-2 bg-gray-700 rounded overflow-hidden mb-3">
+                    <div
+                      className="h-full bg-[#B5594C] transition-all duration-300"
+                      style={{ width: detectingPage !== null ? `${(detectingPage / totalPages) * 100}%` : '100%' }}
+                    />
+                  </div>
+                  {detectingPage !== null && (
+                    <button
+                      onClick={handleCancelDetection}
+                      className="w-full text-red-400 hover:text-red-300 text-sm font-medium"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
-                <p className="text-white text-sm">
-                  {detectingPage !== null
-                    ? `Detecting page ${detectingPage} of ${totalPages}...`
-                    : 'Detecting sensitive content...'}
-                </p>
               </div>
             )}
 

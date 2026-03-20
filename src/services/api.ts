@@ -381,6 +381,10 @@ class ApiService {
     return this.fetch(`/api/files/${fileId}/video/job`);
   }
 
+  async cancelVideoJob(fileId: string): Promise<{ job: VideoJob }> {
+    return this.fetch(`/api/files/${fileId}/video/job/cancel`, { method: 'POST' });
+  }
+
   async listVideoDetections(fileId: string, params?: { track_id?: string; status?: string }): Promise<{ detections: VideoDetection[]; tracks: VideoTrack[] }> {
     const searchParams = new URLSearchParams();
     if (params?.track_id) searchParams.set('track_id', params.track_id);

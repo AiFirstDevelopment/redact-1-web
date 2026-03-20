@@ -31,6 +31,7 @@ export function VideoReviewPage() {
   // Bulk action state
   const [bulkExemption, setBulkExemption] = useState<ExemptionCode>('b7c');
   const [bulkComment, setBulkComment] = useState('');
+  const [isStartingDetection, setIsStartingDetection] = useState(false);
 
   // Load file and detections
   useEffect(() => {
@@ -85,28 +86,36 @@ export function VideoReviewPage() {
     loadData();
   }, [fileId]);
 
-  // Poll job status while processing
+  // Poll job status while processing OR while starting detection
   useEffect(() => {
-    if (!job || !['pending', 'processing'].includes(job.status)) return;
+    const shouldPoll = isStartingDetection || (job && ['pending', 'processing'].includes(job.status));
+    if (!shouldPoll || !fileId) return;
 
-    const interval = setInterval(async () => {
+    const poll = async () => {
       try {
-        const { job: updated } = await api.getVideoJobStatus(fileId!);
+        const { job: updated } = await api.getVideoJobStatus(fileId);
         setJob(updated);
 
         if (updated.status === 'completed') {
           // Reload detections
-          const { detections: dets, tracks: trks } = await api.listVideoDetections(fileId!);
+          const { detections: dets, tracks: trks } = await api.listVideoDetections(fileId);
           setDetections(dets);
           setTracks(trks);
         }
       } catch {
-        // Ignore polling errors
+        // Ignore polling errors - job might not exist yet
       }
-    }, 3000);
+    };
+
+    // Poll immediately when starting detection
+    if (isStartingDetection && !job) {
+      poll();
+    }
+
+    const interval = setInterval(poll, 2000);
 
     return () => clearInterval(interval);
-  }, [job, fileId]);
+  }, [job, fileId, isStartingDetection]);
 
   // Draw detection overlays on canvas
   const drawOverlays = useCallback(() => {
@@ -172,11 +181,54 @@ export function VideoReviewPage() {
   const handleStartDetection = async () => {
     if (!fileId) return;
 
+    setIsStartingDetection(true);
+    setError(null);
+
     try {
+      console.log('[VideoReview] Starting detection for file:', fileId);
       const { job: newJob } = await api.startVideoDetection(fileId);
+      console.log('[VideoReview] Detection job created:', newJob);
       setJob(newJob);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start detection');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to start detection';
+      console.error('[VideoReview] Detection failed:', errorMsg);
+
+      // If job already in progress, fetch the existing job status
+      if (errorMsg.includes('already in progress')) {
+        try {
+          const { job: existingJob } = await api.getVideoJobStatus(fileId);
+          setJob(existingJob);
+        } catch {
+          setError(errorMsg);
+        }
+      } else {
+        setError(errorMsg);
+      }
+    } finally {
+      setIsStartingDetection(false);
+    }
+  };
+
+  // Cancel job
+  const handleCancelJob = async () => {
+    if (!fileId) return;
+
+    console.log('[VideoReview] Cancelling job for file:', fileId);
+    try {
+      const { job: cancelledJob } = await api.cancelVideoJob(fileId);
+      console.log('[VideoReview] Job cancelled:', cancelledJob);
+      setJob(cancelledJob);
+      setIsStartingDetection(false);
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to cancel job';
+      console.error('[VideoReview] Cancel failed:', errorMsg);
+      // Even if cancel fails, reset the UI state
+      setJob(null);
+      setIsStartingDetection(false);
+      // Don't show error for "no active job" - job may have already completed
+      if (!errorMsg.includes('No active job')) {
+        setError(errorMsg);
+      }
     }
   };
 
@@ -321,27 +373,49 @@ export function VideoReviewPage() {
             />
           )}
 
-          {/* Centered detection button overlay */}
-          {detections.length === 0 && !job && (
+          {/* Centered detection button overlay - show when no detections and no active job */}
+          {detections.length === 0 && !isStartingDetection && (!job || job.status === 'failed' || job.status === 'completed') && (
             <div className="absolute inset-0 flex items-center justify-center z-10">
-              <button
-                onClick={handleStartDetection}
-                className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white text-xl font-semibold rounded-lg shadow-lg transition-colors"
-              >
-                Detect Faces
-              </button>
+              <div className="text-center">
+                {job?.status === 'failed' && job.error_message && (
+                  <p className="text-yellow-400 mb-4">
+                    {job.error_message === 'Cancelled by user' ? 'Detection cancelled' : job.error_message}
+                  </p>
+                )}
+                <button
+                  onClick={handleStartDetection}
+                  className="px-8 py-4 text-white text-xl font-semibold rounded-lg shadow-lg transition-colors bg-blue-600 hover:bg-blue-500"
+                >
+                  {job?.status === 'failed' ? 'Retry Detection' : 'Detect Faces'}
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Processing overlay */}
-          {job && ['pending', 'processing'].includes(job.status) && (
+          {/* Processing overlay - show when starting detection OR when job is pending/processing */}
+          {(isStartingDetection || (job && ['pending', 'processing'].includes(job.status))) && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
-              <div className="text-center">
-                <div className="text-4xl mb-4 animate-spin">&#9696;</div>
-                <p className="text-xl text-white">
-                  {job.job_type === 'detection' ? 'Detecting faces' : 'Generating redacted video'}...
+              <div className="text-center w-72">
+                <p className="text-xl text-white mb-4">
+                  {job?.job_type === 'redaction' ? 'Generating redacted video' : 'Detecting faces'}...
                 </p>
-                <p className="text-2xl text-white font-bold mt-2">{job.progress}%</p>
+                <div className="flex justify-between text-sm text-gray-300 mb-2">
+                  <span>Progress</span>
+                  <span>{job?.progress ?? 0}%</span>
+                </div>
+                <div className="w-full h-2 bg-gray-700 rounded overflow-hidden mb-4">
+                  <div
+                    className="h-full bg-blue-500 transition-all duration-300"
+                    style={{ width: `${job?.progress ?? 0}%` }}
+                  />
+                </div>
+                <button
+                  onClick={handleCancelJob}
+                  disabled={!job}
+                  className={`text-sm font-medium ${job ? 'text-red-400 hover:text-red-300' : 'text-gray-500 cursor-not-allowed'}`}
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           )}
@@ -423,15 +497,6 @@ export function VideoReviewPage() {
 
               {/* Actions */}
               <div className="space-y-2">
-                {detections.length === 0 && !job && (
-                  <button
-                    onClick={handleStartDetection}
-                    className="w-full py-2 bg-blue-600 rounded hover:bg-blue-500"
-                  >
-                    Start Face Detection
-                  </button>
-                )}
-
                 {pendingCount > 0 && (
                   <>
                     <select
