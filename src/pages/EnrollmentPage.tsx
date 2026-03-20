@@ -23,10 +23,10 @@ export function EnrollmentPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-2 text-center">Redact-1</h1>
-        <p className="text-gray-600 text-center mb-6">Enter your department code to get started</p>
+    <div className="min-h-screen flex items-center justify-center bg-pastel-blue">
+      <div className="bg-pastel-mint p-8 rounded-lg shadow-xl w-full max-w-md border border-pastel-cream/50">
+        <h1 className="text-2xl font-bold mb-2 text-center text-white">Redact-1</h1>
+        <p className="text-white/80 text-center mb-6">Enter your department code to get started</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
@@ -36,7 +36,7 @@ export function EnrollmentPage() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-white mb-1">
               Department Code
             </label>
             <input
@@ -59,10 +59,10 @@ export function EnrollmentPage() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300" />
+              <div className="w-full border-t border-white/30" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">or</span>
+              <span className="px-2 bg-pastel-mint text-white/70">or</span>
             </div>
           </div>
 
