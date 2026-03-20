@@ -77,16 +77,13 @@ export function UsersPanel() {
   };
 
   const handleDelete = async (id: string) => {
-    if (deleteConfirm === id) {
-      try {
-        await api.deleteUser(id);
-        setDeleteConfirm(null);
-        fetchUsers();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to delete user');
-      }
-    } else {
-      setDeleteConfirm(id);
+    try {
+      await api.deleteUser(id);
+      setDeleteConfirm(null);
+      fetchUsers();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete user');
+      setDeleteConfirm(null);
     }
   };
 
@@ -244,18 +241,44 @@ export function UsersPanel() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button
-                      onClick={() => startEdit(user)}
-                      className="text-blue-600 hover:text-blue-800 mr-3"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(user.id)}
-                      className={deleteConfirm === user.id ? 'text-red-600 font-medium' : 'text-red-600 hover:text-red-800'}
-                    >
-                      {deleteConfirm === user.id ? 'Confirm?' : 'Delete'}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => startEdit(user)}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        Edit
+                      </button>
+                      {deleteConfirm === user.id ? (
+                        <div className="flex items-center bg-red-500 rounded-full shadow-sm">
+                          <button
+                            onClick={() => setDeleteConfirm(null)}
+                            className="p-1.5 text-white hover:bg-red-600 rounded-l-full"
+                            title="Cancel"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                          <div className="w-px h-4 bg-red-400" />
+                          <button
+                            onClick={() => handleDelete(user.id)}
+                            className="p-1.5 text-white hover:bg-red-600 rounded-r-full"
+                            title="Confirm delete"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteConfirm(user.id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

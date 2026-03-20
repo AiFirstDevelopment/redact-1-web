@@ -45,6 +45,20 @@ class ApiService {
     return response.json();
   }
 
+  // Public fetch without auth headers (for console)
+  private async fetchPublic<T>(path: string): Promise<T> {
+    const response = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
   // Auth
   async login(email: string, password: string): Promise<LoginResponse> {
     const data = await this.fetch<LoginResponse>('/api/auth/login', {
@@ -454,6 +468,193 @@ class ApiService {
 
   async getRedactedVideoStreamUrl(fileId: string): Promise<{ url: string }> {
     return this.fetch(`/api/files/${fileId}/video/stream/redacted`);
+  }
+
+  // Metrics
+  async getSystemStatus(): Promise<{
+    timestamp: number;
+    cloudflare: {
+      worker: { status: string };
+      d1: { status: string; counts: Record<string, number> };
+      r2: { status: string; bucket: string };
+    };
+    aws: {
+      lambda: {
+        detection: { running: number; invocationsLast5Min: number };
+        redaction: { running: number; invocationsLast5Min: number };
+      };
+      s3: { bucket: string; status: string };
+      rekognition: { status: string };
+    };
+    jobs: {
+      last24h: { pending: number; processing: number; completed: number; failed: number; cancelled: number };
+    };
+  }> {
+    return this.fetch('/api/metrics/status');
+  }
+
+  async getLambdaStatus(): Promise<{
+    lambda: {
+      detection: { running: number; invocationsLast5Min: number };
+      redaction: { running: number; invocationsLast5Min: number };
+    };
+  }> {
+    return this.fetch('/api/metrics/lambda');
+  }
+
+  async getUsageSummary(days = 30): Promise<{
+    usage: {
+      period: string;
+      rekognition_images: number;
+      rekognition_video_minutes: number;
+      lambda_detection_seconds: number;
+      lambda_redaction_seconds: number;
+      s3_upload_gb: number;
+      s3_download_gb: number;
+      r2_upload_gb: number;
+      r2_download_gb: number;
+      estimated_cost_usd: number;
+    };
+  }> {
+    return this.fetch(`/api/metrics/usage?days=${days}`);
+  }
+
+  async getDailyUsage(days = 30): Promise<{
+    daily: Array<{ date: string; metric_type: string; total: number }>;
+  }> {
+    return this.fetch(`/api/metrics/daily?days=${days}`);
+  }
+
+  async getAWSMetrics(days = 30): Promise<{
+    aws: {
+      period: { start: string; end: string };
+      costs: Array<{ service: string; cost: number; unit: string }>;
+      totalCost: number;
+      lambda: {
+        detectionInvocations: number;
+        detectionDurationMs: number;
+        redactionInvocations: number;
+        redactionDurationMs: number;
+      };
+      rekognition: { faceDetectionMinutes: number };
+      s3: { storageSizeBytes: number; getRequests: number; putRequests: number };
+    };
+  }> {
+    return this.fetch(`/api/metrics/aws?days=${days}`);
+  }
+
+  async getSystemPause(): Promise<{
+    system: { paused: boolean; terminate: boolean; reason?: string; pausedAt?: number };
+  }> {
+    return this.fetch('/api/system/pause');
+  }
+
+  async setSystemPause(paused: boolean, options?: { terminate?: boolean; reason?: string }): Promise<{
+    system: { paused: boolean; terminate: boolean; reason?: string; pausedAt?: number };
+  }> {
+    return this.fetch('/api/system/pause', {
+      method: 'POST',
+      body: JSON.stringify({ paused, ...options }),
+    });
+  }
+
+  // Console methods (public, no auth required)
+  async consoleGetSystemStatus(): Promise<{
+    timestamp: number;
+    cloudflare: {
+      worker: { status: string };
+      d1: { status: string; counts: Record<string, number> };
+      r2: { status: string; bucket: string };
+    };
+    aws: {
+      lambda: {
+        detection: { running: number; invocationsLast5Min: number };
+        redaction: { running: number; invocationsLast5Min: number };
+      };
+      s3: { bucket: string; status: string };
+      rekognition: { status: string };
+    };
+    jobs: {
+      last24h: { pending: number; processing: number; completed: number; failed: number; cancelled: number };
+    };
+  }> {
+    return this.fetchPublic('/api/console/status');
+  }
+
+  async consoleGetUsageSummary(days = 30): Promise<{
+    usage: {
+      period: string;
+      rekognition_images: number;
+      rekognition_video_minutes: number;
+      lambda_detection_seconds: number;
+      lambda_redaction_seconds: number;
+      s3_upload_gb: number;
+      s3_download_gb: number;
+      r2_upload_gb: number;
+      r2_download_gb: number;
+      estimated_cost_usd: number;
+    };
+  }> {
+    return this.fetchPublic(`/api/console/usage?days=${days}`);
+  }
+
+  async consoleGetDailyUsage(days = 30): Promise<{
+    daily: Array<{ date: string; metric_type: string; total: number }>;
+  }> {
+    return this.fetchPublic(`/api/console/daily?days=${days}`);
+  }
+
+  async consoleGetAWSMetrics(days = 30): Promise<{
+    aws: {
+      period: { start: string; end: string };
+      costs: Array<{ service: string; cost: number; unit: string }>;
+      totalCost: number;
+      lambda: {
+        detectionInvocations: number;
+        detectionDurationMs: number;
+        redactionInvocations: number;
+        redactionDurationMs: number;
+      };
+      rekognition: { faceDetectionMinutes: number };
+      s3: { storageSizeBytes: number; getRequests: number; putRequests: number };
+    };
+  }> {
+    return this.fetchPublic(`/api/console/aws?days=${days}`);
+  }
+
+  async consoleGetSystemPause(): Promise<{
+    system: { paused: boolean; terminate: boolean; reason?: string; pausedAt?: number };
+  }> {
+    return this.fetchPublic('/api/console/pause');
+  }
+
+  async consoleSetSystemPause(paused: boolean, options?: { terminate?: boolean; reason?: string }): Promise<{
+    system: { paused: boolean; terminate: boolean; reason?: string; pausedAt?: number };
+  }> {
+    const response = await fetch(`${API_BASE}/api/console/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paused, ...options }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async consoleGetRecentAgencies(): Promise<{
+    agencies: Array<{ id: string; code: string; name: string; created_at: number }>;
+  }> {
+    return this.fetchPublic('/api/console/agencies');
+  }
+
+  async consoleGetRecentUsers(): Promise<{
+    users: Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>;
+  }> {
+    return this.fetchPublic('/api/console/users');
   }
 }
 

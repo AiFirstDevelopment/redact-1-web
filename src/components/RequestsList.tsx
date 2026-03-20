@@ -49,6 +49,7 @@ export function RequestsList({
   isLoadingMore,
 }: RequestsListProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [listHeight, setListHeight] = useState(600);
@@ -299,6 +300,17 @@ export function RequestsList({
       setDeleteConfirm(null);
     } else {
       setDeleteConfirm(id);
+      setArchiveConfirm(null); // Cancel any pending archive
+    }
+  };
+
+  const handleArchive = (id: string) => {
+    if (archiveConfirm === id) {
+      onArchive?.(id);
+      setArchiveConfirm(null);
+    } else {
+      setArchiveConfirm(id);
+      setDeleteConfirm(null); // Cancel any pending delete
     }
   };
 
@@ -503,11 +515,39 @@ export function RequestsList({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                   </svg>
                 </button>
+              ) : archiveConfirm === request.id ? (
+                <div className="flex items-center bg-yellow-500 rounded-full shadow-sm" title="Archive">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setArchiveConfirm(null);
+                    }}
+                    className="p-1.5 text-white hover:bg-yellow-600 rounded-l-full"
+                    title="Cancel"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="w-px h-4 bg-yellow-400" />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleArchive(request.id);
+                    }}
+                    className="p-1.5 text-white hover:bg-yellow-600 rounded-r-full"
+                    title="Confirm archive"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                </div>
               ) : (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onArchive?.(request.id);
+                    handleArchive(request.id);
                   }}
                   className="p-2 text-gray-400 hover:text-yellow-600"
                   title="Archive"
@@ -517,24 +557,54 @@ export function RequestsList({
                   </svg>
                 </button>
               )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(request.id);
-                }}
-                className={`p-2 ${deleteConfirm === request.id ? 'text-red-600' : 'text-gray-400 hover:text-red-600'}`}
-                title={deleteConfirm === request.id ? 'Click again to confirm' : 'Delete'}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+              {deleteConfirm === request.id ? (
+                <div className="flex items-center bg-red-500 rounded-full shadow-sm" title="Delete">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirm(null);
+                    }}
+                    className="p-1.5 text-white hover:bg-red-600 rounded-l-full"
+                    title="Cancel"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                  <div className="w-px h-4 bg-red-400" />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(request.id);
+                    }}
+                    className="p-1.5 text-white hover:bg-red-600 rounded-r-full"
+                    title="Confirm delete"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(request.id);
+                  }}
+                  className="p-2 text-gray-400 hover:text-red-600"
+                  title="Delete"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         </div>
       </div>
     );
-  }, [filteredRequests, selectedId, editingId, editingTitle, deleteConfirm, assigningId, users, downloadReadyMap, downloadingId, showArchived, searchTerm, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated]);
+  }, [filteredRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, showArchived, searchTerm, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated]);
 
   return (
     <div className="p-6 bg-pastel-blue min-h-full">

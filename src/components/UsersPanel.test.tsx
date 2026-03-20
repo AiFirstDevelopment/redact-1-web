@@ -112,5 +112,74 @@ describe('UsersPanel', () => {
         expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
       });
     });
+
+    it('shows confirmation pill when delete clicked', async () => {
+      const user = userEvent.setup();
+      renderUsersPanel();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
+      });
+
+      const deleteButton = screen.getByRole('button', { name: /delete/i });
+      await user.click(deleteButton);
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Cancel')).toBeInTheDocument();
+        expect(screen.getByTitle('Confirm delete')).toBeInTheDocument();
+      });
+    });
+
+    it('hides confirmation pill when cancel clicked', async () => {
+      const user = userEvent.setup();
+      renderUsersPanel();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
+      });
+
+      // Click delete to show confirmation
+      const deleteButton = screen.getByRole('button', { name: /delete/i });
+      await user.click(deleteButton);
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Cancel')).toBeInTheDocument();
+      });
+
+      // Click cancel
+      const cancelButton = screen.getByTitle('Cancel');
+      await user.click(cancelButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
+        expect(screen.queryByTitle('Cancel')).not.toBeInTheDocument();
+      });
+    });
+
+    it('calls delete API when confirm clicked', async () => {
+      const user = userEvent.setup();
+      renderUsersPanel();
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /delete/i })).toBeInTheDocument();
+      });
+
+      // Click delete to show confirmation
+      const deleteButton = screen.getByRole('button', { name: /delete/i });
+      await user.click(deleteButton);
+
+      await waitFor(() => {
+        expect(screen.getByTitle('Confirm delete')).toBeInTheDocument();
+      });
+
+      // Click confirm - this will trigger the API call
+      const confirmButton = screen.getByTitle('Confirm delete');
+      await user.click(confirmButton);
+
+      // After delete, confirmation should be hidden
+      await waitFor(() => {
+        expect(screen.queryByTitle('Confirm delete')).not.toBeInTheDocument();
+      });
+    });
   });
 });
