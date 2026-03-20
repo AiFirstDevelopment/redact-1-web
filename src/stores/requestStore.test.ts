@@ -222,7 +222,8 @@ describe('requestStore', () => {
       const { uploadFile } = useRequestStore.getState();
       const file = new File(['test content'], 'test.pdf', { type: 'application/pdf' });
 
-      const uploadedFile = await uploadFile('req-1', file);
+      const { promise } = uploadFile('req-1', file);
+      const uploadedFile = await promise;
 
       const state = useRequestStore.getState();
       expect(uploadedFile).toBeTruthy();
@@ -233,11 +234,21 @@ describe('requestStore', () => {
       const { uploadFile } = useRequestStore.getState();
       const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
 
-      const uploadPromise = uploadFile('req-1', file);
+      const { promise } = uploadFile('req-1', file);
 
       expect(useRequestStore.getState().isLoading).toBe(true);
 
-      await uploadPromise;
+      await promise;
+    });
+
+    it('returns abort function for cancelling upload', () => {
+      const { uploadFile } = useRequestStore.getState();
+      const file = new File(['test'], 'test.pdf', { type: 'application/pdf' });
+
+      const { promise, abort } = uploadFile('req-1', file);
+
+      expect(typeof abort).toBe('function');
+      expect(promise).toBeInstanceOf(Promise);
     });
   });
 

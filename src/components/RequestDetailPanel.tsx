@@ -13,6 +13,7 @@ interface RequestDetailPanelProps {
 export function RequestDetailPanel({ request, onClose, onRequestUpdated }: RequestDetailPanelProps) {
   const { files, fetchFiles, uploadFile, deleteFile } = useRequestStore();
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [fileToDelete, setFileToDelete] = useState<EvidenceFile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -31,6 +32,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   const [isTolling, setIsTolling] = useState(false);
   const [isExtending, setIsExtending] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortUploadRef = useRef<(() => void) | null>(null);
   const navigate = useNavigate();
 
   const saveTitle = async () => {
@@ -175,17 +177,54 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Track existing file IDs before upload
+      const existingFileIds = new Set(files.map(f => f.id));
       setIsUploading(true);
+      setUploadProgress(0);
+      let wasCancelled = false;
+
       try {
-        await uploadFile(request.id, file);
+        const { promise, abort } = uploadFile(request.id, file, (progress) => {
+          setUploadProgress(progress);
+        });
+        abortUploadRef.current = abort;
+        await promise;
       } catch (err) {
-        console.error('Upload failed:', err);
+        if (err instanceof Error && err.message === 'Upload cancelled') {
+          wasCancelled = true;
+          // Clean up any orphaned files that may have been created
+          await fetchFiles(request.id);
+          const currentFiles = useRequestStore.getState().files;
+          for (const f of currentFiles) {
+            if (!existingFileIds.has(f.id)) {
+              // Hard delete orphaned file
+              try {
+                await deleteFile(f.id, true);
+              } catch {
+                // Ignore cleanup errors
+              }
+            }
+          }
+        } else {
+          console.error('Upload failed:', err);
+        }
       } finally {
         setIsUploading(false);
+        setUploadProgress(0);
+        abortUploadRef.current = null;
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
+        if (wasCancelled) {
+          await fetchFiles(request.id);
+        }
       }
+    }
+  };
+
+  const handleCancelUpload = () => {
+    if (abortUploadRef.current) {
+      abortUploadRef.current();
     }
   };
 
@@ -512,6 +551,29 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
               </label>
             )}
           </div>
+
+          {isUploading && (
+            <div className="mb-4">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>Uploading...</span>
+                <div className="flex items-center gap-2">
+                  <span>{uploadProgress}%</span>
+                  <button
+                    onClick={handleCancelUpload}
+                    className="text-red-600 hover:text-red-800 text-xs font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-150"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {files.length === 0 ? (
             <p className="text-gray-500 text-center py-4 text-sm">

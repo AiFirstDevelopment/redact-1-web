@@ -15,8 +15,8 @@ interface RequestState {
   fetchRequest: (id: string) => Promise<void>;
   fetchFiles: (requestId: string) => Promise<void>;
   createRequest: (data: Partial<Request> & { assign_to?: string }) => Promise<Request>;
-  uploadFile: (requestId: string, file: File) => Promise<EvidenceFile>;
-  deleteFile: (fileId: string) => Promise<void>;
+  uploadFile: (requestId: string, file: File, onProgress?: (progress: number) => void) => { promise: Promise<EvidenceFile>; abort: () => void };
+  deleteFile: (fileId: string, hard?: boolean) => Promise<void>;
 }
 
 export const useRequestStore = create<RequestState>((set, get) => ({
@@ -90,28 +90,34 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     }
   },
 
-  uploadFile: async (requestId: string, file: File) => {
+  uploadFile: (requestId: string, file: File, onProgress?: (progress: number) => void) => {
     set({ isLoading: true, error: null });
-    try {
-      // Check if this is a video file
-      const isVideo = file.type.startsWith('video/') ||
-        ['.mp4', '.mov', '.webm', '.avi'].some(ext => file.name.toLowerCase().endsWith(ext));
 
-      const { file: uploadedFile } = isVideo
-        ? await api.uploadVideo(requestId, file)
-        : await api.uploadFile(requestId, file);
-      set((state) => ({ files: [...state.files, uploadedFile], isLoading: false }));
-      return uploadedFile;
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'Failed to upload file', isLoading: false });
-      throw e;
-    }
+    // Check if this is a video file
+    const isVideo = file.type.startsWith('video/') ||
+      ['.mp4', '.mov', '.webm', '.avi'].some(ext => file.name.toLowerCase().endsWith(ext));
+
+    const { promise, abort } = isVideo
+      ? api.uploadVideo(requestId, file, onProgress)
+      : api.uploadFile(requestId, file, onProgress);
+
+    const wrappedPromise = promise
+      .then(({ file: uploadedFile }) => {
+        set((state) => ({ files: [...state.files, uploadedFile], isLoading: false }));
+        return uploadedFile;
+      })
+      .catch((e) => {
+        set({ error: e instanceof Error ? e.message : 'Failed to upload file', isLoading: false });
+        throw e;
+      });
+
+    return { promise: wrappedPromise, abort };
   },
 
-  deleteFile: async (fileId: string) => {
+  deleteFile: async (fileId: string, hard = false) => {
     set({ isLoading: true, error: null });
     try {
-      await api.deleteFile(fileId);
+      await api.deleteFile(fileId, hard);
       set((state) => ({ files: state.files.filter((f) => f.id !== fileId), isLoading: false }));
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Failed to delete file', isLoading: false });

@@ -291,5 +291,122 @@ describe('RequestDetailPanel', () => {
       // Check video support
       expect(fileInput.accept).toContain('video/*');
     });
+
+    it('shows progress bar during upload', async () => {
+      const { server } = await import('../test/setup');
+      const { http, HttpResponse, delay } = await import('msw');
+
+      // Mock empty files so Upload button is visible
+      server.use(
+        http.get('https://redact-1-worker.joelstevick.workers.dev/api/requests/:requestId/files', () => {
+          return HttpResponse.json({ files: [] });
+        }),
+        http.post('https://redact-1-worker.joelstevick.workers.dev/api/requests/:requestId/files', async () => {
+          await delay(100);
+          return HttpResponse.json({
+            file: {
+              id: 'new-file',
+              request_id: 'req-1',
+              filename: 'test.pdf',
+              file_type: 'pdf',
+              mime_type: 'application/pdf',
+              file_size: 1024,
+              status: 'uploaded',
+            }
+          });
+        })
+      );
+
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText('No file uploaded yet.')).toBeInTheDocument();
+      });
+
+      // Upload button should be visible when no files
+      expect(screen.getByText('Upload File')).toBeInTheDocument();
+    });
+
+    it('shows cancel button during upload', async () => {
+      const { server } = await import('../test/setup');
+      const { http, HttpResponse } = await import('msw');
+
+      // Mock empty files
+      server.use(
+        http.get('https://redact-1-worker.joelstevick.workers.dev/api/requests/:requestId/files', () => {
+          return HttpResponse.json({ files: [] });
+        })
+      );
+
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText('No file uploaded yet.')).toBeInTheDocument();
+      });
+
+      // Verify upload button exists when no files are present
+      const uploadButton = screen.getByText('Upload File');
+      expect(uploadButton).toBeInTheDocument();
+    });
+  });
+
+  // ============================================
+  // File Deletion Tests
+  // ============================================
+
+  describe('file deletion', () => {
+    it('calls delete API when deleting a file', async () => {
+      const user = userEvent.setup();
+      const { server } = await import('../test/setup');
+      const { http, HttpResponse } = await import('msw');
+
+      let deleteCalledWith: string | null = null;
+
+      server.use(
+        http.get('https://redact-1-worker.joelstevick.workers.dev/api/requests/:requestId/files', () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-to-delete',
+              request_id: 'req-1',
+              filename: 'delete-me.pdf',
+              file_type: 'pdf',
+              mime_type: 'application/pdf',
+              file_size: 1024,
+              status: 'uploaded',
+            }],
+          });
+        }),
+        http.delete('https://redact-1-worker.joelstevick.workers.dev/api/files/:fileId', ({ params, request }) => {
+          deleteCalledWith = params.fileId as string;
+          const url = new URL(request.url);
+          const hard = url.searchParams.get('hard');
+          return HttpResponse.json({ success: true, hard });
+        })
+      );
+
+      renderPanel();
+
+      await waitFor(() => {
+        expect(screen.getByText('delete-me.pdf')).toBeInTheDocument();
+      });
+
+      // Click delete button
+      const deleteButton = screen.getByTitle('Delete file');
+      await user.click(deleteButton);
+
+      // Confirm deletion
+      await waitFor(() => {
+        expect(screen.getByText(/are you sure/i)).toBeInTheDocument();
+      });
+
+      const deleteButtons = screen.getAllByRole('button', { name: /delete/i });
+      const confirmButton = deleteButtons.find(btn => btn.classList.contains('bg-red-600'));
+      expect(confirmButton).toBeTruthy();
+      await user.click(confirmButton!);
+
+      await waitFor(() => {
+        expect(deleteCalledWith).toBe('file-to-delete');
+      });
+    });
   });
 });

@@ -109,23 +109,49 @@ class ApiService {
     return this.fetch(`/api/requests/${requestId}/files`);
   }
 
-  async uploadFile(requestId: string, file: File): Promise<{ file: EvidenceFile }> {
+  uploadFile(
+    requestId: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): { promise: Promise<{ file: EvidenceFile }>; abort: () => void } {
     const formData = new FormData();
     formData.append('file', file);
-
     const token = this.getToken();
-    const response = await fetch(`${API_BASE}/api/requests/${requestId}/files`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
+    const xhr = new XMLHttpRequest();
+
+    const promise = new Promise<{ file: EvidenceFile }>((resolve, reject) => {
+      xhr.open('POST', `${API_BASE}/api/requests/${requestId}/files`);
+
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText));
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error('Upload failed'));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Upload failed'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      xhr.send(formData);
     });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(error.error);
-    }
-
-    return response.json();
+    return { promise, abort: () => xhr.abort() };
   }
 
   async getFileOriginal(fileId: string): Promise<Blob> {
@@ -269,8 +295,9 @@ class ApiService {
     return this.fetch(`/api/requests/${id}/timeline`);
   }
 
-  async deleteFile(id: string): Promise<{ success: boolean }> {
-    return this.fetch(`/api/files/${id}`, { method: 'DELETE' });
+  async deleteFile(id: string, hard = false): Promise<{ success: boolean }> {
+    const url = hard ? `/api/files/${id}?hard=true` : `/api/files/${id}`;
+    return this.fetch(url, { method: 'DELETE' });
   }
 
   async markFileReviewed(id: string): Promise<{ file: EvidenceFile }> {
@@ -301,23 +328,49 @@ class ApiService {
   }
 
   // Video methods
-  async uploadVideo(requestId: string, file: File): Promise<{ file: EvidenceFile }> {
+  uploadVideo(
+    requestId: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): { promise: Promise<{ file: EvidenceFile }>; abort: () => void } {
     const formData = new FormData();
     formData.append('file', file);
-
     const token = this.getToken();
-    const response = await fetch(`${API_BASE}/api/requests/${requestId}/videos`, {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
+    const xhr = new XMLHttpRequest();
+
+    const promise = new Promise<{ file: EvidenceFile }>((resolve, reject) => {
+      xhr.open('POST', `${API_BASE}/api/requests/${requestId}/videos`);
+
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          onProgress(progress);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText));
+        } else {
+          try {
+            const error = JSON.parse(xhr.responseText);
+            reject(new Error(error.error || 'Upload failed'));
+          } catch {
+            reject(new Error('Upload failed'));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Upload failed'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      xhr.send(formData);
     });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(error.error);
-    }
-
-    return response.json();
+    return { promise, abort: () => xhr.abort() };
   }
 
   async startVideoDetection(fileId: string): Promise<{ job: VideoJob }> {
