@@ -20,7 +20,7 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
     { id: 'requests', label: 'Requests' },
     { id: 'archived', label: 'Archived' },
     { id: 'users', label: 'Users', supervisorOnly: true },
-    { id: 'settings', label: 'Settings' },
+    { id: 'settings', label: 'Settings', supervisorOnly: true },
   ];
 
   return (
