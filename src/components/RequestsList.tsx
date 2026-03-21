@@ -720,54 +720,39 @@ export function RequestsList({
               ) : auditLogs.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No audit logs found.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {auditLogs.map((log) => {
                     const date = new Date(log.created_at < 1e12 ? log.created_at * 1000 : log.created_at);
-                    let details: { status?: string; comment?: string; exemption_code?: string; count?: number; track_id?: string } | null = null;
-                    try {
-                      if (log.details) {
-                        details = JSON.parse(log.details);
-                      }
-                    } catch {
-                      // Keep details as null if parsing fails
-                    }
                     return (
-                      <div key={log.id} className="border-l-2 border-blue-200 pl-4 py-2">
-                        <div className="flex items-center gap-2 text-sm text-gray-500">
-                          <span>{date.toLocaleDateString()} {date.toLocaleTimeString()}</span>
-                          <span className="text-gray-300">|</span>
-                          <span className="font-medium text-gray-700">{log.user_name || 'System'}</span>
-                        </div>
-                        <div className="mt-1">
-                          <span className="inline-block px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-800 mr-2">
-                            {log.action}
+                      <div key={log.id} className="text-sm border-l-2 border-gray-200 pl-3 py-1">
+                        <div className="flex justify-between items-start">
+                          <span className="font-medium text-gray-900">
+                            {log.user_name || 'System'}
                           </span>
-                          <span className="text-sm text-gray-600">{log.entity_type}</span>
-                          {details && (
-                            <div className="mt-1 text-sm">
-                              {details.status && (
-                                <span className={`inline-block px-2 py-0.5 text-xs rounded mr-2 ${
-                                  details.status === 'approved' ? 'bg-green-100 text-green-800' :
-                                  details.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {details.status}
-                                </span>
-                              )}
-                              {details.exemption_code && (
-                                <span className="text-gray-500 mr-2">({details.exemption_code})</span>
-                              )}
-                              {details.count !== undefined && (
-                                <span className="text-gray-500">{details.count} detections</span>
-                              )}
-                              {details.status && (
-                                <div className="text-gray-600 mt-1">
-                                  <span className="font-medium">Note:</span> {details.comment || '""'}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                          <span className="text-xs text-gray-400">
+                            {date.toLocaleDateString()}
+                          </span>
                         </div>
+                        <p className="text-gray-600">
+                          {log.action.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('_')} {log.entity_type}
+                          {log.details && (
+                            <span className="text-gray-400 ml-1">
+                              - {(() => {
+                                try {
+                                  const details = JSON.parse(log.details);
+                                  const parts = [];
+                                  if (details.status) parts.push(`status: ${details.status}`);
+                                  if (details.count !== undefined) parts.push(`${details.count} detections`);
+                                  if (details.comment) parts.push(`note: ${details.comment}`);
+                                  else if (details.status) parts.push(`note: ""`);
+                                  return parts.join(', ') || '';
+                                } catch {
+                                  return log.details;
+                                }
+                              })()}
+                            </span>
+                          )}
+                        </p>
                       </div>
                     );
                   })}
