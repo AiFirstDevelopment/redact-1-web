@@ -723,6 +723,14 @@ export function RequestsList({
                 <div className="space-y-3">
                   {auditLogs.map((log) => {
                     const date = new Date(log.created_at < 1e12 ? log.created_at * 1000 : log.created_at);
+                    let details: { status?: string; comment?: string; exemption_code?: string; count?: number; track_id?: string } | null = null;
+                    try {
+                      if (log.details) {
+                        details = JSON.parse(log.details);
+                      }
+                    } catch {
+                      // Keep details as null if parsing fails
+                    }
                     return (
                       <div key={log.id} className="border-l-2 border-blue-200 pl-4 py-2">
                         <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -735,8 +743,29 @@ export function RequestsList({
                             {log.action}
                           </span>
                           <span className="text-sm text-gray-600">{log.entity_type}</span>
-                          {log.details && (
-                            <p className="text-sm text-gray-500 mt-1">{log.details}</p>
+                          {details && (
+                            <div className="mt-1 text-sm">
+                              {details.status && (
+                                <span className={`inline-block px-2 py-0.5 text-xs rounded mr-2 ${
+                                  details.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                  details.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {details.status}
+                                </span>
+                              )}
+                              {details.exemption_code && (
+                                <span className="text-gray-500 mr-2">({details.exemption_code})</span>
+                              )}
+                              {details.count !== undefined && (
+                                <span className="text-gray-500">{details.count} detections</span>
+                              )}
+                              {details.status && (
+                                <div className="text-gray-600 mt-1">
+                                  <span className="font-medium">Note:</span> {details.comment || '""'}
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
