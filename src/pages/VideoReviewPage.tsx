@@ -305,7 +305,7 @@ export function VideoReviewPage() {
         <div className="text-center">
           <p className="text-red-400 mb-4">{error || 'File not found'}</p>
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => navigate(file?.request_id ? `/?request=${file.request_id}` : '/')}
             className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
           >
             Go Back
@@ -326,7 +326,7 @@ export function VideoReviewPage() {
         <div className="flex items-center justify-between p-4 border-b border-gray-700">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate(file.request_id ? `/?request=${file.request_id}` : '/')}
               className="text-gray-400 hover:text-white"
             >
               &larr; Back

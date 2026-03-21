@@ -51,6 +51,7 @@ export function RequestsList({
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [listHeight, setListHeight] = useState(600);
   const [editingTitle, setEditingTitle] = useState('');
@@ -123,18 +124,42 @@ export function RequestsList({
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; file: string } | null>(null);
+
   const handleDownload = async (e: React.MouseEvent, request: Request) => {
     e.stopPropagation();
     setDownloadingId(request.id);
+    setDownloadProgress(null);
 
     try {
       const zip = new JSZip();
 
       // Get files for this request
       const { files } = await api.listFiles(request.id);
+      const totalFiles = files.length;
 
       // Process each file
-      for (const file of files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setDownloadProgress({ current: i + 1, total: totalFiles, file: file.filename });
+
+        // For videos, get the redacted version if available
+        if (file.file_type === 'video') {
+          try {
+            const { url } = await api.getRedactedVideoStreamUrl(file.id);
+            const response = await fetch(url);
+            if (response.ok) {
+              const blob = await response.blob();
+              const baseName = file.filename.replace(/\.[^/.]+$/, '');
+              zip.folder('redacted')?.file(`${baseName}_redacted.mp4`, blob);
+            }
+          } catch {
+            // No redacted video available, skip
+            console.log(`Skipping video ${file.filename} - no redacted version`);
+          }
+          continue;
+        }
+
         // Get detections for this file
         const { detections } = await api.listDetections(file.id);
         const approvedDetections = detections.filter((d: Detection) => d.status === 'approved');
@@ -235,9 +260,11 @@ export function RequestsList({
       saveAs(zipBlob, `${fileName}_redacted.zip`);
     } catch (err) {
       console.error('Failed to generate export:', err);
-      alert('Failed to generate export. Please try again.');
+      setErrorMessage('Failed to generate export. Please try again.');
+      setTimeout(() => setErrorMessage(null), 5000);
     } finally {
       setDownloadingId(null);
+      setDownloadProgress(null);
     }
   };
 
@@ -490,23 +517,26 @@ export function RequestsList({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
               </button>
-              <button
-                onClick={(e) => handleDownload(e, request)}
-                disabled={downloadingId === request.id || !downloadReadyMap[request.id]}
-                className="p-2 text-gray-400 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={downloadReadyMap[request.id] ? 'Download Redacted Files' : 'Complete review to enable download'}
-              >
-                {downloadingId === request.id ? (
-                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+              {downloadingId === request.id && downloadProgress ? (
+                <div className="flex items-center gap-2 px-2 py-1 bg-blue-100 rounded-lg">
+                  <svg className="w-4 h-4 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                ) : (
+                  <span className="text-xs text-blue-700">{downloadProgress.current}/{downloadProgress.total}</span>
+                </div>
+              ) : (
+                <button
+                  onClick={(e) => handleDownload(e, request)}
+                  disabled={downloadingId === request.id || !downloadReadyMap[request.id]}
+                  className="p-2 text-gray-400 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={downloadReadyMap[request.id] ? 'Download Redacted Files' : 'Complete review to enable download'}
+                >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                )}
-              </button>
+                </button>
+              )}
               {showArchived ? (
                 <button
                   onClick={(e) => {
@@ -613,6 +643,22 @@ export function RequestsList({
 
   return (
     <div className="p-6 bg-pastel-blue min-h-full">
+      {/* Error Toast */}
+      {errorMessage && (
+        <div className="fixed top-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-3">
+          <span>{errorMessage}</span>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="text-white hover:text-red-200"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">

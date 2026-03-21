@@ -325,6 +325,13 @@ class ApiService {
     return this.fetch(url, { method: 'DELETE' });
   }
 
+  async renameFile(id: string, filename: string): Promise<{ file: EvidenceFile }> {
+    return this.fetch(`/api/files/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ filename }),
+    });
+  }
+
   async markFileReviewed(id: string): Promise<{ file: EvidenceFile }> {
     return this.fetch(`/api/files/${id}/mark-reviewed`, { method: 'POST' });
   }

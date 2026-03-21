@@ -56,6 +56,7 @@ export interface EvidenceFile {
   updated_at: number;
   detection_count?: number;
   pending_count?: number;
+  duration_seconds?: number;
 }
 
 export interface Detection {

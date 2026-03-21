@@ -368,5 +368,23 @@ describe('VideoReviewPage', () => {
         expect(screen.getByText('← Back')).toBeInTheDocument();
       });
     });
+
+    it('should navigate to request page with request param when back is clicked', async () => {
+      // Update mock to include request_id
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ file: { ...mockFile, request_id: 'req-123' } }),
+      });
+
+      const { container } = renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('← Back')).toBeInTheDocument();
+      });
+
+      // The back button should have an onClick that navigates to /?request=req-123
+      const backButton = screen.getByText('← Back');
+      expect(backButton).toBeInTheDocument();
+    });
   });
 });

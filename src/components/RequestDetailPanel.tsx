@@ -14,8 +14,10 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
   const { files, fetchFiles, uploadFile, deleteFile } = useRequestStore();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [fileToDelete, setFileToDelete] = useState<EvidenceFile | null>(null);
+  const [pendingDeleteFileId, setPendingDeleteFileId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [editingFilename, setEditingFilename] = useState('');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editingTitle, setEditingTitle] = useState(request.title || '');
   const [users, setUsers] = useState<User[]>([]);
@@ -262,22 +264,59 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
     }
   };
 
-  const handleDeleteClick = (e: React.MouseEvent, file: EvidenceFile) => {
+  const handleDeleteClick = (e: React.MouseEvent, fileId: string) => {
     e.stopPropagation();
-    setFileToDelete(file);
+    setPendingDeleteFileId(fileId);
   };
 
-  const handleConfirmDelete = async () => {
-    if (!fileToDelete) return;
+  const handleConfirmDelete = async (e: React.MouseEvent, fileId: string) => {
+    e.stopPropagation();
     setIsDeleting(true);
     try {
-      await deleteFile(fileToDelete.id);
-      setFileToDelete(null);
+      await deleteFile(fileId);
+      setPendingDeleteFileId(null);
     } catch (err) {
       console.error('Delete failed:', err);
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  const handleCancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPendingDeleteFileId(null);
+  };
+
+  const handleStartEditFilename = (e: React.MouseEvent, file: EvidenceFile) => {
+    e.stopPropagation();
+    setEditingFileId(file.id);
+    setEditingFilename(file.filename);
+  };
+
+  const handleSaveFilename = async (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    if (!editingFileId || !editingFilename.trim()) return;
+
+    try {
+      await api.renameFile(editingFileId, editingFilename.trim());
+      await fetchFiles(request.id);
+      setEditingFileId(null);
+      setEditingFilename('');
+    } catch (err) {
+      console.error('Rename failed:', err);
+    }
+  };
+
+  const handleCancelEditFilename = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.stopPropagation();
+    setEditingFileId(null);
+    setEditingFilename('');
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -584,8 +623,7 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
               {files.map((file) => (
                 <div
                   key={file.id}
-                  onClick={() => openFileReview(file)}
-                  className="flex items-center gap-3 p-3 border rounded-lg hover:border-blue-300 cursor-pointer transition-colors"
+                  className="flex items-center gap-3 p-3 border rounded-lg transition-colors"
                 >
                   <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center flex-shrink-0">
                     {file.file_type === 'video' ? (
@@ -600,8 +638,48 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-sm truncate">{file.filename}</p>
-                      {(() => {
+                      {editingFileId === file.id ? (
+                        <div className="flex items-center gap-1 flex-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editingFilename}
+                            onChange={(e) => setEditingFilename(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveFilename(e);
+                              if (e.key === 'Escape') handleCancelEditFilename(e);
+                            }}
+                            className="flex-1 px-2 py-0.5 text-sm border rounded focus:outline-none focus:border-blue-400"
+                            autoFocus
+                          />
+                          <button
+                            onClick={handleSaveFilename}
+                            className="p-1 text-green-600 hover:bg-green-50 rounded"
+                            title="Save"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={handleCancelEditFilename}
+                            className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                            title="Cancel"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <p
+                          className="font-medium text-sm truncate cursor-pointer hover:text-blue-600"
+                          onClick={(e) => handleStartEditFilename(e, file)}
+                          title="Click to rename"
+                        >
+                          {file.filename}
+                        </p>
+                      )}
+                      {editingFileId !== file.id && (() => {
                         const detections = file.detection_count ?? 0;
                         const pending = file.pending_count ?? 0;
                         const isReviewed = file.status === 'reviewed' || file.status === 'exported';
@@ -638,17 +716,58 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
                         );
                       })()}
                     </div>
-                    <p className="text-xs text-gray-500">{formatFileSize(file.file_size)}</p>
+                    <p className="text-xs text-gray-500">
+                      {file.file_type === 'video' && file.duration_seconds
+                        ? formatDuration(file.duration_seconds)
+                        : formatFileSize(file.file_size)}
+                    </p>
                   </div>
-                  <button
-                    onClick={(e) => handleDeleteClick(e, file)}
-                    className="p-1.5 text-red-500 hover:bg-red-50 rounded transition-colors"
-                    title="Delete file"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center gap-1 self-start mb-[12px]">
+                    <button
+                      onClick={() => openFileReview(file)}
+                      className="p-1.5 text-gray-400 hover:text-blue-600"
+                      title="Edit file"
+                    >
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    {pendingDeleteFileId === file.id ? (
+                      <div className="flex items-center bg-red-500 rounded-full shadow-sm">
+                        <button
+                          onClick={handleCancelDelete}
+                          disabled={isDeleting}
+                          className="p-1.5 text-white hover:bg-red-600 rounded-l-full disabled:opacity-50"
+                          title="Cancel"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                        <div className="w-px h-4 bg-red-400" />
+                        <button
+                          onClick={(e) => handleConfirmDelete(e, file.id)}
+                          disabled={isDeleting}
+                          className="p-1.5 text-white hover:bg-red-600 rounded-r-full disabled:opacity-50"
+                          title="Confirm delete"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => handleDeleteClick(e, file.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600"
+                        title="Delete file"
+                      >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -656,33 +775,6 @@ export function RequestDetailPanel({ request, onClose, onRequestUpdated }: Reque
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {fileToDelete && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm mx-4 shadow-xl">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Delete File</h3>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to delete <span className="font-semibold">{fileToDelete.filename}</span>? This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setFileToDelete(null)}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-                disabled={isDeleting}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmDelete}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-                disabled={isDeleting}
-              >
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Toll Modal */}
       {showTollModal && (
