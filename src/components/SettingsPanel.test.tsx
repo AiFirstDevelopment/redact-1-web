@@ -157,7 +157,7 @@ describe('SettingsPanel', () => {
     });
 
     it('should show Saving... text while saving', async () => {
-      let resolvePromise: () => void;
+      let resolvePromise: (value?: unknown) => void;
       (api.updateAgency as any).mockImplementation(
         () => new Promise((resolve) => { resolvePromise = resolve; })
       );

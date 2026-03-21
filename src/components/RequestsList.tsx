@@ -4,7 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import type { Request, User, Detection } from '../types';
+import type { Request, User, Detection, AuditLog } from '../types';
 import { api } from '../services/api';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -52,6 +52,9 @@ export function RequestsList({
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [auditModalRequest, setAuditModalRequest] = useState<Request | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [listHeight, setListHeight] = useState(600);
   const [editingTitle, setEditingTitle] = useState('');
@@ -341,6 +344,28 @@ export function RequestsList({
     }
   };
 
+  const openAuditModal = async (e: React.MouseEvent, request: Request) => {
+    e.stopPropagation();
+    setAuditModalRequest(request);
+    setLoadingAuditLogs(true);
+    try {
+      const { audit_logs } = await api.getRequestAuditLogs(request.id);
+      // Sort by recency (most recent first)
+      const sorted = [...audit_logs].sort((a, b) => b.created_at - a.created_at);
+      setAuditLogs(sorted);
+    } catch (err) {
+      console.error('Failed to load audit logs:', err);
+      setAuditLogs([]);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  };
+
+  const closeAuditModal = () => {
+    setAuditModalRequest(null);
+    setAuditLogs([]);
+  };
+
   const startEditingTitle = (e: React.MouseEvent, request: Request) => {
     e.stopPropagation();
     setEditingId(request.id);
@@ -517,6 +542,15 @@ export function RequestsList({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                 </svg>
               </button>
+              <button
+                onClick={(e) => openAuditModal(e, request)}
+                className="p-2 text-gray-400 hover:text-purple-600"
+                title="View Audit Trail"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
               {downloadingId === request.id && downloadProgress ? (
                 <div className="flex items-center gap-2 px-2 py-1 bg-blue-100 rounded-lg">
                   <svg className="w-4 h-4 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
@@ -639,7 +673,7 @@ export function RequestsList({
         </div>
       </div>
     );
-  }, [filteredRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, showArchived, searchTerm, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated]);
+  }, [filteredRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, downloadProgress, showArchived, searchTerm, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated, openAuditModal]);
 
   return (
     <div className="p-6 bg-pastel-blue min-h-full">
@@ -658,6 +692,62 @@ export function RequestsList({
         </div>
       )}
 
+      {/* Audit Trail Modal */}
+      {auditModalRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={closeAuditModal}>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">
+                Audit Trail - {auditModalRequest.request_number}
+              </h3>
+              <button
+                onClick={closeAuditModal}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {loadingAuditLogs ? (
+                <div className="flex items-center justify-center py-8">
+                  <svg className="w-6 h-6 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                </div>
+              ) : auditLogs.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No audit logs found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {auditLogs.map((log) => {
+                    const date = new Date(log.created_at < 1e12 ? log.created_at * 1000 : log.created_at);
+                    return (
+                      <div key={log.id} className="border-l-2 border-blue-200 pl-4 py-2">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <span>{date.toLocaleDateString()} {date.toLocaleTimeString()}</span>
+                          <span className="text-gray-300">|</span>
+                          <span className="font-medium text-gray-700">{log.user_name || 'System'}</span>
+                        </div>
+                        <div className="mt-1">
+                          <span className="inline-block px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-800 mr-2">
+                            {log.action}
+                          </span>
+                          <span className="text-sm text-gray-600">{log.entity_type}</span>
+                          {log.details && (
+                            <p className="text-sm text-gray-500 mt-1">{log.details}</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
