@@ -352,9 +352,9 @@ export function ConsolePage() {
   const [showCreateAgencyModal, setShowCreateAgencyModal] = useState(false);
   const [showCreateSupervisorModal, setShowCreateSupervisorModal] = useState(false);
   const [showAgencyUsersModal, setShowAgencyUsersModal] = useState(false);
-  const [agencyUsers, setAgencyUsers] = useState<Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>>([]);
+  const [agencyUsers, setAgencyUsers] = useState<Array<{ id: string; email: string; name: string; role: string; auth_status: string; created_at: number; agency_name: string }>>([]);
   const [agencies, setAgencies] = useState<Array<{ id: string; code: string; name: string; created_at: number }>>([]);
-  const [users, setUsers] = useState<Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>>([]);
+  const [users, setUsers] = useState<Array<{ id: string; email: string; name: string; role: string; auth_status: string; created_at: number; agency_name: string }>>([]);
 
   // Admin state
   const [activeTab, setActiveTab] = useState<'monitoring' | 'admin'>('monitoring');
@@ -368,10 +368,17 @@ export function ConsolePage() {
   const [newAgencyDays, setNewAgencyDays] = useState(10);
   const [newAgencyType, setNewAgencyType] = useState<'business_days' | 'calendar_days'>('business_days');
 
-  // Supervisor form
-  const [newSupervisorEmail, setNewSupervisorEmail] = useState('');
-  const [newSupervisorName, setNewSupervisorName] = useState('');
+  // User form
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserRole, setNewUserRole] = useState<'supervisor' | 'clerk'>('supervisor');
+  const [newUserSupervisorId, setNewUserSupervisorId] = useState('');
   const [selectedAgencyCode, setSelectedAgencyCode] = useState('');
+  const [agencySupervisors, setAgencySupervisors] = useState<Array<{ id: string; email: string; name: string }>>([]);
+
+  // Delete user state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteReassignToId, setDeleteReassignToId] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -471,8 +478,16 @@ export function ConsolePage() {
     }
   };
 
-  const handleAddSupervisor = (agencyCode: string) => {
+  const handleAddUser = async (agencyCode: string) => {
     setSelectedAgencyCode(agencyCode);
+    setNewUserRole('supervisor');
+    setNewUserSupervisorId('');
+    try {
+      const result = await api.adminListAgencySupervisors(agencyCode);
+      setAgencySupervisors(result.supervisors);
+    } catch {
+      setAgencySupervisors([]);
+    }
     setShowCreateSupervisorModal(true);
   };
 
@@ -514,28 +529,88 @@ export function ConsolePage() {
     }
   };
 
-  const handleCreateSupervisor = async (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       setAdminLoading(true);
       setError(null);
       setAdminSuccess(null);
-      const result = await api.adminCreateSupervisor({
-        email: newSupervisorEmail,
-        name: newSupervisorName,
+      const result = await api.adminCreateUser({
+        email: newUserEmail,
+        name: newUserName,
+        role: newUserRole,
         agency_code: selectedAgencyCode,
+        supervisor_id: newUserRole === 'clerk' ? newUserSupervisorId : undefined,
       });
-      setAdminSuccess(`Supervisor "${newSupervisorEmail}" created for ${result.user.agency.name}. They can now sign up at the app with this email.`);
-      setNewSupervisorEmail('');
-      setNewSupervisorName('');
+      const roleLabel = newUserRole === 'supervisor' ? 'Supervisor' : 'Clerk';
+      const emailStatus = result.invite.sent
+        ? 'Invite email sent!'
+        : `Invite email failed: ${result.invite.error || 'Unknown error'}`;
+      setAdminSuccess(`${roleLabel} "${newUserEmail}" created for ${result.user.agency.name}. ${emailStatus}`);
+      setNewUserEmail('');
+      setNewUserName('');
+      setNewUserRole('supervisor');
+      setNewUserSupervisorId('');
       setShowCreateSupervisorModal(false);
       setSelectedAgencyCode('');
+      setAgencySupervisors([]);
       fetchAdminAgencies();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create supervisor');
+      setError(err instanceof Error ? err.message : 'Failed to create user');
     } finally {
       setAdminLoading(false);
     }
+  };
+
+  const handleDeleteUser = async (user: { id: string; email: string; role: string }) => {
+    // First click - show confirm state
+    if (deleteConfirmId !== user.id) {
+      setDeleteConfirmId(user.id);
+      setDeleteReassignToId('');
+      // Fetch supervisors if deleting a supervisor (for reassignment dropdown)
+      if (user.role === 'supervisor' && selectedAgencyCode) {
+        try {
+          const result = await api.adminListAgencySupervisors(selectedAgencyCode);
+          // Filter out the user being deleted
+          setAgencySupervisors(result.supervisors.filter(s => s.id !== user.id));
+        } catch {
+          setAgencySupervisors([]);
+        }
+      }
+      return;
+    }
+
+    // Second click - perform delete
+    // For supervisors, require reassignment selection
+    if (user.role === 'supervisor' && !deleteReassignToId) {
+      setError('Please select a supervisor to reassign requests to');
+      return;
+    }
+
+    try {
+      setAdminLoading(true);
+      setError(null);
+      await api.adminDeleteUser(user.id, user.role === 'supervisor' ? deleteReassignToId : undefined);
+      setAdminSuccess(`User "${user.email}" has been deleted`);
+      setDeleteConfirmId(null);
+      setDeleteReassignToId('');
+      // Refresh the users list
+      if (selectedAgencyCode) {
+        const result = await api.consoleGetRecentUsers();
+        const filtered = result.users.filter(u => u.agency_name === adminAgencies.find(a => a.code === selectedAgencyCode)?.name);
+        setAgencyUsers(filtered);
+      }
+      fetchAdminAgencies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete user');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirmId(null);
+    setDeleteReassignToId('');
   };
 
   useEffect(() => {
@@ -649,23 +724,7 @@ export function ConsolePage() {
                       <th className="pb-2">Code</th>
                       <th className="pb-2">Name</th>
                       <th className="pb-2">Deadline</th>
-                      <th className="pb-2">
-                        <span className="inline-flex items-center gap-2">
-                          Users
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (adminAgencies.length === 1) {
-                                handleAddSupervisor(adminAgencies[0].code);
-                              }
-                            }}
-                            className="w-5 h-5 flex items-center justify-center bg-teal-600 hover:bg-teal-500 rounded-full text-white text-sm font-bold leading-none"
-                            title="Add supervisor"
-                          >
-                            +
-                          </button>
-                        </span>
-                      </th>
+                      <th className="pb-2">Users</th>
                       <th className="pb-2">Created</th>
                     </tr>
                   </thead>
@@ -690,9 +749,9 @@ export function ConsolePage() {
                               {agency.user_count}
                             </button>
                             <button
-                              onClick={() => handleAddSupervisor(agency.code)}
+                              onClick={() => handleAddUser(agency.code)}
                               className="w-5 h-5 flex items-center justify-center bg-teal-600 hover:bg-teal-500 rounded-full text-white text-sm font-bold leading-none"
-                              title={`Add supervisor to ${agency.code}`}
+                              title={`Add user to ${agency.code}`}
                             >
                               +
                             </button>
@@ -1085,31 +1144,32 @@ export function ConsolePage() {
         </div>
       )}
 
-      {/* Create Supervisor Modal */}
+      {/* Add User Modal */}
       {showCreateSupervisorModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-gray-800 rounded-lg w-full max-w-lg mx-4 shadow-xl border border-gray-700">
             <div className="flex justify-between items-center p-4 border-b border-gray-700">
-              <h3 className="text-xl font-bold text-white">Add Supervisor to {selectedAgencyCode}</h3>
+              <h3 className="text-xl font-bold text-white">Add User to {selectedAgencyCode}</h3>
               <button
                 onClick={() => {
                   setShowCreateSupervisorModal(false);
                   setSelectedAgencyCode('');
+                  setAgencySupervisors([]);
                 }}
                 className="text-gray-400 hover:text-white text-2xl leading-none"
               >
                 &times;
               </button>
             </div>
-            <form onSubmit={handleCreateSupervisor} className="p-4 space-y-4">
+            <form onSubmit={handleCreateUser} className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Email</label>
                   <input
                     type="email"
-                    value={newSupervisorEmail}
-                    onChange={(e) => setNewSupervisorEmail(e.target.value)}
-                    placeholder="supervisor@agency.gov"
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="user@agency.gov"
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
                     required
                   />
@@ -1118,16 +1178,55 @@ export function ConsolePage() {
                   <label className="block text-sm text-gray-400 mb-1">Name</label>
                   <input
                     type="text"
-                    value={newSupervisorName}
-                    onChange={(e) => setNewSupervisorName(e.target.value)}
+                    value={newUserName}
+                    onChange={(e) => setNewUserName(e.target.value)}
                     placeholder="John Smith"
                     className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500"
                     required
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Role</label>
+                <select
+                  value={newUserRole}
+                  onChange={(e) => {
+                    setNewUserRole(e.target.value as 'supervisor' | 'clerk');
+                    if (e.target.value === 'supervisor') {
+                      setNewUserSupervisorId('');
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                >
+                  <option value="supervisor">Supervisor</option>
+                  {agencySupervisors.length > 0 && <option value="clerk">Clerk</option>}
+                </select>
+                {agencySupervisors.length === 0 && (
+                  <p className="text-xs text-yellow-500 mt-1">
+                    Create a supervisor first before adding clerks
+                  </p>
+                )}
+              </div>
+              {newUserRole === 'clerk' && (
+                <div>
+                  <label className="block text-sm text-gray-400 mb-1">Supervisor</label>
+                  <select
+                    value={newUserSupervisorId}
+                    onChange={(e) => setNewUserSupervisorId(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white"
+                    required
+                  >
+                    <option value="">Select supervisor...</option>
+                    {agencySupervisors.map((sup) => (
+                      <option key={sup.id} value={sup.id}>
+                        {sup.name} ({sup.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <p className="text-xs text-gray-500">
-                The supervisor will be created with "invited" status. They can then sign up at the app using this email address.
+                The user will be created with "invited" status. They can then sign up at the app using this email address.
               </p>
               <div className="flex justify-end gap-3 pt-2">
                 <button
@@ -1135,6 +1234,7 @@ export function ConsolePage() {
                   onClick={() => {
                     setShowCreateSupervisorModal(false);
                     setSelectedAgencyCode('');
+                    setAgencySupervisors([]);
                   }}
                   className="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded font-medium"
                 >
@@ -1142,10 +1242,10 @@ export function ConsolePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={adminLoading || !newSupervisorEmail || !newSupervisorName}
+                  disabled={adminLoading || !newUserEmail || !newUserName || (newUserRole === 'clerk' && !newUserSupervisorId)}
                   className="px-6 py-2 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded font-medium"
                 >
-                  {adminLoading ? 'Creating...' : 'Create Supervisor'}
+                  {adminLoading ? 'Creating...' : `Create ${newUserRole === 'supervisor' ? 'Supervisor' : 'Clerk'}`}
                 </button>
               </div>
             </form>
@@ -1174,19 +1274,84 @@ export function ConsolePage() {
                 <div className="text-gray-500 text-center py-8">No users found</div>
               ) : (
                 <div className="space-y-2">
-                  {agencyUsers.map((user) => (
-                    <div key={user.id} className="bg-gray-700/50 rounded p-3 flex justify-between items-center">
-                      <div>
-                        <div className="text-white font-medium">{user.name || user.email}</div>
-                        <div className="text-gray-400 text-sm">
-                          {user.email} · {user.role}
+                  {agencyUsers.map((user) => {
+                    const isConfirming = deleteConfirmId === user.id;
+                    const isSupervisor = user.role === 'supervisor';
+                    const supervisorCount = agencyUsers.filter(u => u.role === 'supervisor').length;
+                    const isLastSupervisor = isSupervisor && supervisorCount <= 1;
+
+                    return (
+                      <div key={user.id} className={`bg-gray-700/50 rounded p-3 ${isConfirming ? 'ring-2 ring-red-500' : ''}`}>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="text-white font-medium">{user.name || user.email}</div>
+                            <div className="text-gray-400 text-sm flex items-center gap-2">
+                              {user.email} · {user.role}
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                user.auth_status === 'active' ? 'bg-green-900/50 text-green-400' :
+                                user.auth_status === 'signing_up' ? 'bg-blue-900/50 text-blue-400' :
+                                user.auth_status === 'invited' ? 'bg-yellow-900/50 text-yellow-400' :
+                                user.auth_status === 'pending' ? 'bg-gray-700 text-gray-400' :
+                                'bg-red-900/50 text-red-400'
+                              }`}>
+                                {user.auth_status === 'signing_up' ? 'signing up' : user.auth_status}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-gray-500 text-xs">
+                              {new Date(user.created_at * 1000).toLocaleDateString()}
+                            </div>
+                            {isConfirming ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={cancelDelete}
+                                  className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-500 rounded"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(user)}
+                                  disabled={adminLoading || (isSupervisor && !deleteReassignToId)}
+                                  className="px-3 py-1 text-sm bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded"
+                                >
+                                  {adminLoading ? 'Deleting...' : 'Delete'}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                disabled={isLastSupervisor}
+                                title={isLastSupervisor ? 'Cannot delete the last supervisor' : 'Delete user'}
+                                className="px-3 py-1 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/30 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-not-allowed rounded"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
                         </div>
+                        {isConfirming && isSupervisor && (
+                          <div className="mt-3 pt-3 border-t border-gray-600">
+                            <label className="block text-sm text-gray-400 mb-1">
+                              Reassign requests to:
+                            </label>
+                            <select
+                              value={deleteReassignToId}
+                              onChange={(e) => setDeleteReassignToId(e.target.value)}
+                              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm"
+                            >
+                              <option value="">Select supervisor...</option>
+                              {agencySupervisors.map((sup) => (
+                                <option key={sup.id} value={sup.id}>
+                                  {sup.name} ({sup.email})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-gray-500 text-xs">
-                        {new Date(user.created_at * 1000).toLocaleDateString()}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

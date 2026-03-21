@@ -38,9 +38,10 @@ class ApiService {
   }
 
   // Public fetch without auth headers (for console)
-  private async fetchPublic<T>(path: string): Promise<T> {
+  private async fetchPublic<T>(path: string, options?: RequestInit): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       headers: { 'Content-Type': 'application/json' },
+      ...options,
     });
 
     if (!response.ok) {
@@ -634,9 +635,17 @@ class ApiService {
   }
 
   async consoleGetRecentUsers(): Promise<{
-    users: Array<{ id: string; email: string; name: string; role: string; created_at: number; agency_name: string }>;
+    users: Array<{ id: string; email: string; name: string; role: string; auth_status: string; created_at: number; agency_name: string }>;
   }> {
     return this.fetchPublic('/api/console/users');
+  }
+
+  async trackSignupVisit(email: string): Promise<{ success: boolean; updated: boolean }> {
+    return this.fetchPublic('/api/console/track-signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
   }
 
   // Admin console methods (for onboarding agencies)
@@ -700,6 +709,73 @@ class ApiService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async adminCreateUser(data: {
+    email: string;
+    name: string;
+    role: 'supervisor' | 'clerk';
+    agency_code: string;
+    supervisor_id?: string;
+  }): Promise<{
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      auth_status: string;
+      agency: { id: string; code: string; name: string };
+    };
+    invite: {
+      sent: boolean;
+      error?: string;
+    };
+  }> {
+    const response = await fetch(`${API_BASE}/api/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async adminListAgencySupervisors(agencyCode: string): Promise<{
+    supervisors: Array<{ id: string; email: string; name: string }>;
+  }> {
+    const response = await fetch(`${API_BASE}/api/admin/agencies/${agencyCode}/supervisors`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async adminDeleteUser(userId: string, reassignToId?: string): Promise<{
+    success: boolean;
+    deleted: { id: string; email: string; role: string };
+  }> {
+    const response = await fetch(`${API_BASE}/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reassign_to_id: reassignToId }),
     });
 
     if (!response.ok) {

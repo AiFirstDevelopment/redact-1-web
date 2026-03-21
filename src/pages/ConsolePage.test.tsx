@@ -15,7 +15,7 @@ vi.mock('../services/api', () => ({
     consoleGetRecentUsers: vi.fn(),
     adminListAgencies: vi.fn(),
     adminCreateAgency: vi.fn(),
-    adminCreateSupervisor: vi.fn(),
+    adminCreateUser: vi.fn(),
   },
 }));
 
@@ -399,7 +399,7 @@ describe('ConsolePage', () => {
 
       // Find the modal and click the X button
       const modal = screen.getByText('Create New Agency').closest('div[class*="fixed"]');
-      const closeButton = within(modal!).getByText('×');
+      const closeButton = within(modal as HTMLElement).getByText('×');
       fireEvent.click(closeButton);
 
       await waitFor(() => {
@@ -671,14 +671,14 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      const addSupervisorButton = screen.getByTitle('Add supervisor to DEMO');
+      const addSupervisorButton = screen.getByTitle('Add user to DEMO');
       fireEvent.click(addSupervisorButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      expect(screen.getByPlaceholderText('supervisor@agency.gov')).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('user@agency.gov')).toBeInTheDocument();
       expect(screen.getByPlaceholderText('John Smith')).toBeInTheDocument();
     });
 
@@ -695,16 +695,16 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
       fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
       await waitFor(() => {
-        expect(screen.queryByText('Add Supervisor to DEMO')).not.toBeInTheDocument();
+        expect(screen.queryByText('Add User to DEMO')).not.toBeInTheDocument();
       });
     });
 
@@ -721,31 +721,32 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      const modal = screen.getByText('Add Supervisor to DEMO').closest('div[class*="fixed"]');
-      const closeButton = within(modal!).getByText('×');
+      const modal = screen.getByText('Add User to DEMO').closest('div[class*="fixed"]');
+      const closeButton = within(modal as HTMLElement).getByText('×');
       fireEvent.click(closeButton);
 
       await waitFor(() => {
-        expect(screen.queryByText('Add Supervisor to DEMO')).not.toBeInTheDocument();
+        expect(screen.queryByText('Add User to DEMO')).not.toBeInTheDocument();
       });
     });
 
     it('should create supervisor when form is submitted', async () => {
-      (api.adminCreateSupervisor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      (api.adminCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
         user: {
           id: 'new-user',
-          email: 'supervisor@agency.gov',
+          email: 'user@agency.gov',
           name: 'John Smith',
           role: 'supervisor',
           auth_status: 'invited',
           agency: { id: 'agency-1', code: 'DEMO', name: 'Demo PD' },
         },
+        invite: { sent: true },
       });
 
       render(<ConsolePage />);
@@ -760,35 +761,37 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.change(screen.getByPlaceholderText('supervisor@agency.gov'), { target: { value: 'supervisor@agency.gov' } });
+      fireEvent.change(screen.getByPlaceholderText('user@agency.gov'), { target: { value: 'user@agency.gov' } });
       fireEvent.change(screen.getByPlaceholderText('John Smith'), { target: { value: 'John Smith' } });
       fireEvent.click(screen.getByRole('button', { name: 'Create Supervisor' }));
 
       await waitFor(() => {
-        expect(api.adminCreateSupervisor).toHaveBeenCalledWith({
-          email: 'supervisor@agency.gov',
+        expect(api.adminCreateUser).toHaveBeenCalledWith({
+          email: 'user@agency.gov',
           name: 'John Smith',
+          role: 'supervisor',
           agency_code: 'DEMO',
         });
       });
     });
 
     it('should show success message after creating supervisor', async () => {
-      (api.adminCreateSupervisor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      (api.adminCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
         user: {
           id: 'new-user',
-          email: 'supervisor@agency.gov',
+          email: 'user@agency.gov',
           name: 'John Smith',
           role: 'supervisor',
           auth_status: 'invited',
           agency: { id: 'agency-1', code: 'DEMO', name: 'Demo PD' },
         },
+        invite: { sent: true },
       });
 
       render(<ConsolePage />);
@@ -803,31 +806,32 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.change(screen.getByPlaceholderText('supervisor@agency.gov'), { target: { value: 'supervisor@agency.gov' } });
+      fireEvent.change(screen.getByPlaceholderText('user@agency.gov'), { target: { value: 'user@agency.gov' } });
       fireEvent.change(screen.getByPlaceholderText('John Smith'), { target: { value: 'John Smith' } });
       fireEvent.click(screen.getByRole('button', { name: 'Create Supervisor' }));
 
       await waitFor(() => {
-        expect(screen.getByText(/supervisor@agency.gov.*created/)).toBeInTheDocument();
+        expect(screen.getByText(/Supervisor.*user@agency.gov.*created/)).toBeInTheDocument();
       });
     });
 
     it('should close modal after successful supervisor creation', async () => {
-      (api.adminCreateSupervisor as ReturnType<typeof vi.fn>).mockResolvedValue({
+      (api.adminCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
         user: {
           id: 'new-user',
-          email: 'supervisor@agency.gov',
+          email: 'user@agency.gov',
           name: 'John Smith',
           role: 'supervisor',
           auth_status: 'invited',
           agency: { id: 'agency-1', code: 'DEMO', name: 'Demo PD' },
         },
+        invite: { sent: true },
       });
 
       render(<ConsolePage />);
@@ -842,23 +846,23 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.change(screen.getByPlaceholderText('supervisor@agency.gov'), { target: { value: 'supervisor@agency.gov' } });
+      fireEvent.change(screen.getByPlaceholderText('user@agency.gov'), { target: { value: 'user@agency.gov' } });
       fireEvent.change(screen.getByPlaceholderText('John Smith'), { target: { value: 'John Smith' } });
       fireEvent.click(screen.getByRole('button', { name: 'Create Supervisor' }));
 
       await waitFor(() => {
-        expect(screen.queryByText('Add Supervisor to DEMO')).not.toBeInTheDocument();
+        expect(screen.queryByText('Add User to DEMO')).not.toBeInTheDocument();
       });
     });
 
     it('should show error message on supervisor creation failure', async () => {
-      (api.adminCreateSupervisor as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('User with this email already exists'));
+      (api.adminCreateUser as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('User with this email already exists'));
 
       render(<ConsolePage />);
 
@@ -872,13 +876,13 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.change(screen.getByPlaceholderText('supervisor@agency.gov'), { target: { value: 'existing@agency.gov' } });
+      fireEvent.change(screen.getByPlaceholderText('user@agency.gov'), { target: { value: 'existing@agency.gov' } });
       fireEvent.change(screen.getByPlaceholderText('John Smith'), { target: { value: 'John Smith' } });
       fireEvent.click(screen.getByRole('button', { name: 'Create Supervisor' }));
 
@@ -900,10 +904,10 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
       const createButton = screen.getByRole('button', { name: 'Create Supervisor' });
@@ -923,13 +927,13 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
-        expect(screen.getByText('Add Supervisor to DEMO')).toBeInTheDocument();
+        expect(screen.getByText('Add User to DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.change(screen.getByPlaceholderText('supervisor@agency.gov'), { target: { value: 'test@test.gov' } });
+      fireEvent.change(screen.getByPlaceholderText('user@agency.gov'), { target: { value: 'test@test.gov' } });
       fireEvent.change(screen.getByPlaceholderText('John Smith'), { target: { value: 'Test User' } });
 
       const createButton = screen.getByRole('button', { name: 'Create Supervisor' });
@@ -949,7 +953,7 @@ describe('ConsolePage', () => {
         expect(screen.getByText('DEMO')).toBeInTheDocument();
       });
 
-      fireEvent.click(screen.getByTitle('Add supervisor to DEMO'));
+      fireEvent.click(screen.getByTitle('Add user to DEMO'));
 
       await waitFor(() => {
         expect(screen.getByText(/invited.*status/i)).toBeInTheDocument();
@@ -1025,7 +1029,7 @@ describe('ConsolePage', () => {
       });
 
       const modal = screen.getByText('Users in DEMO').closest('div[class*="fixed"]');
-      const closeButton = within(modal!).getByText('×');
+      const closeButton = within(modal as HTMLElement).getByText('×');
       fireEvent.click(closeButton);
 
       await waitFor(() => {

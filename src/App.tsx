@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { SignedIn, SignedOut, SignIn, useAuth, useUser } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, useAuth, useUser } from '@clerk/clerk-react';
 import { useAuthStore } from './stores/authStore';
-import { EnrollmentPage, MainPage, FileReviewPage, VideoReviewPage, ConsolePage } from './pages';
+import { EnrollmentPage, MainPage, FileReviewPage, VideoReviewPage, ConsolePage, SignUpPage, SignInPage } from './pages';
 
 function AuthSync({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
@@ -35,12 +35,18 @@ function App() {
   return (
     <Routes>
       <Route
-        path="/sign-in/*"
+        path="/sign-in"
         element={
           <SignedOut>
-            <div className="min-h-screen flex items-center justify-center bg-gray-100">
-              <SignIn routing="path" path="/sign-in" />
-            </div>
+            <SignInPage />
+          </SignedOut>
+        }
+      />
+      <Route
+        path="/sign-up"
+        element={
+          <SignedOut>
+            <SignUpPage />
           </SignedOut>
         }
       />
