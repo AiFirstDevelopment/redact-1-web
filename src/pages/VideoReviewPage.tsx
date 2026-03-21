@@ -436,14 +436,6 @@ export function VideoReviewPage() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Job status */}
-            {job && ['pending', 'processing'].includes(job.status) && (
-              <div className="flex items-center gap-2 text-yellow-400">
-                <span className="animate-spin">&#9696;</span>
-                <span>{job.job_type === 'detection' ? 'Detecting' : 'Redacting'}... {job.progress}%</span>
-              </div>
-            )}
-
             {/* Original/Redacted tabs */}
             {redactedVideoUrl && (
               <div className="flex rounded overflow-hidden">
@@ -700,14 +692,6 @@ export function VideoReviewPage() {
                       {job.status}
                     </span>
                   </div>
-                  {job.progress > 0 && job.status === 'processing' && (
-                    <div className="mt-2 bg-gray-600 rounded h-2">
-                      <div
-                        className="bg-blue-500 h-full rounded"
-                        style={{ width: `${job.progress}%` }}
-                      />
-                    </div>
-                  )}
                   {job.error_message && (
                     <p className="mt-2 text-red-400 text-sm">{job.error_message}</p>
                   )}

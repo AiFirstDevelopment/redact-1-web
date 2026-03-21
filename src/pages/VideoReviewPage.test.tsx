@@ -360,6 +360,45 @@ describe('VideoReviewPage', () => {
         expect(screen.getByText('processing')).toBeInTheDocument();
       });
     });
+
+    it('should not show progress indicator in header when processing', async () => {
+      (api.getVideoJobStatus as any).mockResolvedValue({
+        job: { ...mockJob, status: 'processing', progress: 50 },
+      });
+
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('processing')).toBeInTheDocument();
+      });
+
+      // Progress should only show in video overlay, not in header
+      // Header would show "Detecting... 50%" text - verify it's not there
+      expect(screen.queryByText(/Detecting\.\.\. 50%/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Redacting\.\.\. 50%/)).not.toBeInTheDocument();
+    });
+
+    it('should not show progress bar in sidebar when processing', async () => {
+      (api.getVideoJobStatus as any).mockResolvedValue({
+        job: { ...mockJob, status: 'processing', progress: 50 },
+      });
+
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('processing')).toBeInTheDocument();
+      });
+
+      // Find the Job Status section in the sidebar
+      const jobStatusLabel = screen.getByText('Job Status');
+      const sidebarSection = jobStatusLabel.closest('div')?.parentElement;
+      expect(sidebarSection).toBeInTheDocument();
+
+      // The sidebar Job Status section should NOT contain a progress bar
+      // Progress is only shown in the video overlay
+      const progressBarsInSidebar = sidebarSection?.querySelectorAll('.bg-blue-500');
+      expect(progressBarsInSidebar?.length || 0).toBe(0);
+    });
   });
 
   describe('Track Selection', () => {
