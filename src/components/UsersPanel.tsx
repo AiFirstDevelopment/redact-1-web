@@ -223,65 +223,72 @@ export function UsersPanel() {
               </tr>
             </thead>
             <tbody className="bg-card-white divide-y divide-gray-200">
-              {users.map((user) => (
-                <tr key={user.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="font-medium">{user.name}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-500">
-                    {user.email}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      user.role === 'supervisor'
-                        ? 'bg-purple-100 text-purple-800'
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => startEdit(user)}
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        Edit
-                      </button>
-                      {deleteConfirm === user.id ? (
-                        <div className="flex items-center bg-red-500 rounded-full shadow-sm">
-                          <button
-                            onClick={() => setDeleteConfirm(null)}
-                            className="p-1.5 text-white hover:bg-red-600 rounded-l-full"
-                            title="Cancel"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                          <div className="w-px h-4 bg-red-400" />
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            className="p-1.5 text-white hover:bg-red-600 rounded-r-full"
-                            title="Confirm delete"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </button>
-                        </div>
-                      ) : (
+              {users.map((user) => {
+                const supervisorCount = users.filter(u => u.role === 'supervisor').length;
+                const isLastSupervisor = user.role === 'supervisor' && supervisorCount <= 1;
+
+                return (
+                  <tr key={user.id}>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="font-medium">{user.name}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">
+                      {user.email}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        user.role === 'supervisor'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}>
+                        {user.role}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      <div className="flex items-center justify-end gap-2">
                         <button
-                          onClick={() => setDeleteConfirm(user.id)}
-                          className="text-red-600 hover:text-red-800"
+                          onClick={() => startEdit(user)}
+                          className="text-blue-600 hover:text-blue-800"
                         >
-                          Delete
+                          Edit
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {!isLastSupervisor && (
+                          deleteConfirm === user.id ? (
+                            <div className="flex items-center bg-red-500 rounded-full shadow-sm">
+                              <button
+                                onClick={() => setDeleteConfirm(null)}
+                                className="p-1.5 text-white hover:bg-red-600 rounded-l-full"
+                                title="Cancel"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                              <div className="w-px h-4 bg-red-400" />
+                              <button
+                                onClick={() => handleDelete(user.id)}
+                                className="p-1.5 text-white hover:bg-red-600 rounded-r-full"
+                                title="Confirm delete"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirm(user.id)}
+                              className="text-red-600 hover:text-red-800"
+                            >
+                              Delete
+                            </button>
+                          )
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
