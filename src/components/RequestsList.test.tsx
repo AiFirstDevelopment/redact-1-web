@@ -564,6 +564,114 @@ describe('RequestsList', () => {
   });
 
   // ============================================
+  // Audit Trail Modal Tests
+  // ============================================
+
+  describe('audit trail modal', () => {
+    it('shows audit trail button for each request', () => {
+      renderRequestsList();
+
+      const auditButtons = screen.getAllByTitle(/view audit trail/i);
+      expect(auditButtons.length).toBeGreaterThan(0);
+    });
+
+    it('opens audit trail modal when button is clicked', async () => {
+      const user = userEvent.setup();
+
+      // Mock audit logs API
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/audit`, () => {
+          return HttpResponse.json({
+            audit_logs: [
+              {
+                id: 'log-1',
+                user_id: 'user-1',
+                user_name: 'Test User',
+                action: 'bulk_update_video_detections',
+                entity_type: 'file',
+                entity_id: 'file-1',
+                details: JSON.stringify({ status: 'approved', count: 5, comment: 'Test note' }),
+                created_at: Date.now() / 1000,
+              },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      const auditButton = screen.getAllByTitle(/view audit trail/i)[0];
+      await user.click(auditButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/audit trail/i)).toBeInTheDocument();
+      });
+    });
+
+    it('displays audit logs in modal with formatted action', async () => {
+      const user = userEvent.setup();
+      renderRequestsList();
+
+      const auditButton = screen.getAllByTitle(/view audit trail/i)[0];
+      await user.click(auditButton);
+
+      // Default handler returns an audit log - wait for modal to show
+      await waitFor(() => {
+        expect(screen.getByText(/Audit Trail - RR/)).toBeInTheDocument();
+      });
+
+      // Should show the action from default handler
+      await waitFor(() => {
+        expect(screen.getByText(/Create request/)).toBeInTheDocument();
+      });
+    });
+
+    it('closes modal when close button is clicked', async () => {
+      const user = userEvent.setup();
+      renderRequestsList();
+
+      const auditButton = screen.getAllByTitle(/view audit trail/i)[0];
+      await user.click(auditButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Audit Trail - RR/)).toBeInTheDocument();
+      });
+
+      // Find the close button in the modal
+      const modalCloseButtons = screen.getAllByRole('button').filter(btn =>
+        btn.closest('.fixed') && btn.querySelector('svg')
+      );
+      await user.click(modalCloseButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Audit Trail - RR/)).not.toBeInTheDocument();
+      });
+    });
+
+    it('closes modal when clicking backdrop', async () => {
+      const user = userEvent.setup();
+      renderRequestsList();
+
+      const auditButton = screen.getAllByTitle(/view audit trail/i)[0];
+      await user.click(auditButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Audit Trail - RR/)).toBeInTheDocument();
+      });
+
+      // Click the backdrop (the outer fixed div)
+      const backdrop = document.querySelector('.fixed.inset-0');
+      if (backdrop) {
+        await user.click(backdrop);
+      }
+
+      await waitFor(() => {
+        expect(screen.queryByText(/Audit Trail - RR/)).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  // ============================================
   // Assignee Filter Tests
   // ============================================
 
