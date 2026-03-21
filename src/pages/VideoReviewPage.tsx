@@ -3,8 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { EvidenceFile, VideoDetection, VideoJob, VideoTrack, ExemptionCode, EXEMPTION_LABELS } from '../types';
 
-type ReviewTab = 'detections' | 'timeline';
-
 export function VideoReviewPage() {
   const { fileId } = useParams<{ fileId: string }>();
   const navigate = useNavigate();
@@ -18,7 +16,6 @@ export function VideoReviewPage() {
   const [job, setJob] = useState<VideoJob | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ReviewTab>('detections');
   const [selectedTrack, setSelectedTrack] = useState<string | null>(null);
   const [selectedDetection, setSelectedDetection] = useState<VideoDetection | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -32,6 +29,11 @@ export function VideoReviewPage() {
   const [bulkExemption, setBulkExemption] = useState<ExemptionCode>('b7c');
   const [bulkComment, setBulkComment] = useState('');
   const [isStartingDetection, setIsStartingDetection] = useState(false);
+
+  // Note input state for individual detection actions
+  const [noteDetectionId, setNoteDetectionId] = useState<string | null>(null);
+  const [noteAction, setNoteAction] = useState<'approved' | 'rejected' | null>(null);
+  const [noteText, setNoteText] = useState('');
 
   // Load file and detections
   useEffect(() => {
@@ -102,6 +104,16 @@ export function VideoReviewPage() {
           const { detections: dets, tracks: trks } = await api.listVideoDetections(fileId);
           setDetections(dets);
           setTracks(trks);
+
+          // If redaction job completed, get the redacted video URL
+          if (updated.job_type === 'redaction') {
+            try {
+              const { url: redactedUrl } = await api.getRedactedVideoStreamUrl(fileId);
+              setRedactedVideoUrl(redactedUrl);
+            } catch {
+              // Redacted video not ready yet
+            }
+          }
         }
       } catch {
         // Ignore polling errors - job might not exist yet
@@ -234,10 +246,12 @@ export function VideoReviewPage() {
   };
 
   // Approve/reject single detection
-  const handleUpdateDetection = async (id: string, status: 'approved' | 'rejected') => {
+  const handleUpdateDetection = async (id: string, status: 'approved' | 'rejected', comment?: string) => {
     try {
-      const { detection } = await api.updateVideoDetection(id, { status });
+      const { detection } = await api.updateVideoDetection(id, { status, comment });
       setDetections(prev => prev.map(d => d.id === id ? detection : d));
+      setNoteDetectionId(null);
+      setNoteText('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update detection');
     }
@@ -344,14 +358,22 @@ export function VideoReviewPage() {
               </div>
             )}
 
-            {/* Toggle original/redacted */}
+            {/* Original/Redacted tabs */}
             {redactedVideoUrl && (
-              <button
-                onClick={() => setShowRedacted(!showRedacted)}
-                className={`px-3 py-1 rounded ${showRedacted ? 'bg-green-600' : 'bg-gray-600'}`}
-              >
-                {showRedacted ? 'Showing Redacted' : 'Show Redacted'}
-              </button>
+              <div className="flex rounded overflow-hidden">
+                <button
+                  onClick={() => setShowRedacted(false)}
+                  className={`px-4 py-1 ${!showRedacted ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+                >
+                  Original
+                </button>
+                <button
+                  onClick={() => setShowRedacted(true)}
+                  className={`px-4 py-1 ${showRedacted ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
+                >
+                  Redacted
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -460,148 +482,161 @@ export function VideoReviewPage() {
 
       {/* Sidebar */}
       <div className="w-80 border-l border-gray-700 flex flex-col">
-        {/* Tabs */}
-        <div className="flex border-b border-gray-700">
-          <button
-            className={`flex-1 py-3 text-center ${activeTab === 'detections' ? 'bg-gray-700' : ''}`}
-            onClick={() => setActiveTab('detections')}
-          >
-            Detections ({detections.length})
-          </button>
-          <button
-            className={`flex-1 py-3 text-center ${activeTab === 'timeline' ? 'bg-gray-700' : ''}`}
-            onClick={() => setActiveTab('timeline')}
-          >
-            Timeline
-          </button>
-        </div>
-
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {activeTab === 'detections' ? (
-            <div className="space-y-4">
-              {/* Status summary */}
-              <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                <div className="bg-yellow-500/20 p-2 rounded">
-                  <div className="font-bold">{pendingCount}</div>
-                  <div className="text-yellow-400">Pending</div>
-                </div>
-                <div className="bg-green-500/20 p-2 rounded">
-                  <div className="font-bold">{approvedCount}</div>
-                  <div className="text-green-400">Approved</div>
-                </div>
-                <div className="bg-red-500/20 p-2 rounded">
-                  <div className="font-bold">{detections.length - pendingCount - approvedCount}</div>
-                  <div className="text-red-400">Rejected</div>
-                </div>
+          <div className="space-y-4">
+            {/* Status summary */}
+            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="bg-yellow-500/20 p-2 rounded">
+                <div className="font-bold">{pendingCount}</div>
+                <div className="text-yellow-400">Pending</div>
               </div>
+              <div className="bg-green-500/20 p-2 rounded">
+                <div className="font-bold">{approvedCount}</div>
+                <div className="text-green-400">Approved</div>
+              </div>
+              <div className="bg-red-500/20 p-2 rounded">
+                <div className="font-bold">{detections.length - pendingCount - approvedCount}</div>
+                <div className="text-red-400">Rejected</div>
+              </div>
+            </div>
 
-              {/* Actions */}
-              <div className="space-y-2">
-                {pendingCount > 0 && (
-                  <>
-                    <select
-                      value={bulkExemption}
-                      onChange={e => setBulkExemption(e.target.value as ExemptionCode)}
-                      className="w-full p-2 bg-gray-700 rounded"
-                    >
-                      {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
-                        <option key={code} value={code}>{label}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      value={bulkComment}
-                      onChange={e => setBulkComment(e.target.value)}
-                      placeholder="Comment (optional)"
-                      className="w-full p-2 bg-gray-700 rounded"
-                    />
-                    <button
-                      onClick={() => handleBulkUpdate('approved')}
-                      className="w-full py-2 bg-green-600 rounded hover:bg-green-500"
-                    >
-                      {selectedTrack ? `Approve Track ${selectedTrack}` : 'Approve All Pending'}
-                    </button>
-                    <button
-                      onClick={() => handleBulkUpdate('rejected')}
-                      className="w-full py-2 bg-red-600 rounded hover:bg-red-500"
-                    >
-                      {selectedTrack ? `Reject Track ${selectedTrack}` : 'Reject All Pending'}
-                    </button>
-                  </>
-                )}
-
-                {approvedCount > 0 && pendingCount === 0 && !job?.status?.includes('processing') && (
+            {/* Actions */}
+            <div className="space-y-2">
+              {pendingCount > 0 && (
+                <>
+                  <select
+                    value={bulkExemption}
+                    onChange={e => setBulkExemption(e.target.value as ExemptionCode)}
+                    className="w-full p-2 bg-gray-700 rounded"
+                  >
+                    {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
+                      <option key={code} value={code}>{label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={bulkComment}
+                    onChange={e => setBulkComment(e.target.value)}
+                    placeholder="Comment (optional)"
+                    className="w-full p-2 bg-gray-700 rounded"
+                  />
                   <button
-                    onClick={handleStartRedaction}
-                    className="w-full py-2 bg-purple-600 rounded hover:bg-purple-500"
+                    onClick={() => handleBulkUpdate('approved')}
+                    className="w-full py-2 bg-green-600 rounded hover:bg-green-500"
                   >
-                    Generate Redacted Video
+                    {selectedTrack ? `Approve Track ${selectedTrack}` : 'Approve All Pending'}
                   </button>
-                )}
-              </div>
-
-              {/* Track list */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">Tracks</h3>
-                {tracks.map(track => (
                   <button
-                    key={track.track_id}
-                    onClick={() => setSelectedTrack(selectedTrack === track.track_id ? null : track.track_id)}
-                    className={`w-full p-2 rounded text-left ${
-                      selectedTrack === track.track_id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
-                    }`}
+                    onClick={() => handleBulkUpdate('rejected')}
+                    className="w-full py-2 bg-red-600 rounded hover:bg-red-500"
                   >
-                    <div className="flex justify-between">
-                      <span>{track.track_id}</span>
-                      <span className="text-gray-400">{track.count} segments</span>
-                    </div>
+                    {selectedTrack ? `Reject Track ${selectedTrack}` : 'Reject All Pending'}
                   </button>
-                ))}
-              </div>
+                </>
+              )}
 
-              {/* Detection list */}
-              <div className="space-y-2">
-                <h3 className="font-semibold">All Detections</h3>
-                {detections.map(det => (
-                  <div
-                    key={det.id}
-                    onClick={() => seekToDetection(det)}
-                    className={`p-2 rounded cursor-pointer ${
-                      selectedDetection?.id === det.id ? 'ring-2 ring-blue-400' : ''
-                    } ${
-                      det.status === 'approved' ? 'bg-green-900/30' :
-                      det.status === 'rejected' ? 'bg-red-900/30' : 'bg-gray-700'
-                    }`}
-                  >
-                    <div className="flex justify-between text-sm">
-                      <span>{det.track_id || 'manual'}</span>
-                      <span>{formatTime(det.start_time_ms)} - {formatTime(det.end_time_ms)}</span>
+              {approvedCount > 0 && pendingCount === 0 && !job?.status?.includes('processing') && (
+                <button
+                  onClick={handleStartRedaction}
+                  className="w-full py-2 bg-purple-600 rounded hover:bg-purple-500"
+                >
+                  Generate Redacted Video
+                </button>
+              )}
+            </div>
+
+            {/* Track list */}
+            <div className="space-y-2">
+              <h3 className="font-semibold">Tracks</h3>
+              {tracks.map(track => (
+                <button
+                  key={track.track_id}
+                  onClick={() => setSelectedTrack(selectedTrack === track.track_id ? null : track.track_id)}
+                  className={`w-full p-2 rounded text-left ${
+                    selectedTrack === track.track_id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
+                  }`}
+                >
+                  <div className="flex justify-between">
+                    <span>{track.track_id}</span>
+                    <span className="text-gray-400">{track.count} segments</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Detection list */}
+            <div className="space-y-2">
+              <h3 className="font-semibold">All Detections</h3>
+              {detections.map(det => (
+                <div
+                  key={det.id}
+                  onClick={() => seekToDetection(det)}
+                  className={`p-2 rounded cursor-pointer ${
+                    selectedDetection?.id === det.id ? 'ring-2 ring-blue-400' : ''
+                  } ${
+                    det.status === 'approved' ? 'bg-green-900/30' :
+                    det.status === 'rejected' ? 'bg-red-900/30' : 'bg-gray-700'
+                  }`}
+                >
+                  <div className="flex justify-between text-sm">
+                    <span>{det.track_id || 'manual'}</span>
+                    <span>{formatTime(det.start_time_ms)} - {formatTime(det.end_time_ms)}</span>
+                  </div>
+                  {det.comment && (
+                    <div className="text-xs text-gray-400 mt-1 italic">"{det.comment}"</div>
+                  )}
+                  {noteDetectionId === det.id ? (
+                    <div className="mt-2 space-y-2" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        value={noteText}
+                        onChange={e => setNoteText(e.target.value)}
+                        placeholder="Add note (optional)"
+                        className="w-full p-1 bg-gray-600 rounded text-xs"
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleUpdateDetection(det.id, noteAction!, noteText || undefined)}
+                          className={`flex-1 py-1 rounded text-xs ${noteAction === 'approved' ? 'bg-green-600' : 'bg-red-600'}`}
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => { setNoteDetectionId(null); setNoteText(''); }}
+                          className="flex-1 py-1 bg-gray-600 rounded text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
+                  ) : (
                     <div className="flex gap-2 mt-2">
                       <button
-                        onClick={e => { e.stopPropagation(); handleUpdateDetection(det.id, 'approved'); }}
+                        onClick={e => { e.stopPropagation(); setNoteDetectionId(det.id); setNoteAction('approved'); setNoteText(''); }}
                         className="flex-1 py-1 bg-green-600 rounded text-xs hover:bg-green-500"
                         disabled={det.status === 'approved'}
                       >
                         Approve
                       </button>
                       <button
-                        onClick={e => { e.stopPropagation(); handleUpdateDetection(det.id, 'rejected'); }}
+                        onClick={e => { e.stopPropagation(); setNoteDetectionId(det.id); setNoteAction('rejected'); setNoteText(''); }}
                         className="flex-1 py-1 bg-red-600 rounded text-xs hover:bg-red-500"
                         disabled={det.status === 'rejected'}
                       >
                         Reject
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  )}
+                </div>
+              ))}
             </div>
-          ) : (
-            <div className="space-y-2">
-              <h3 className="font-semibold">Job History</h3>
-              {job ? (
+
+            {/* Job status */}
+            {job && (
+              <div className="space-y-2">
+                <h3 className="font-semibold">Job Status</h3>
                 <div className="p-3 bg-gray-700 rounded">
                   <div className="flex justify-between">
                     <span className="capitalize">{job.job_type}</span>
@@ -624,17 +659,10 @@ export function VideoReviewPage() {
                   {job.error_message && (
                     <p className="mt-2 text-red-400 text-sm">{job.error_message}</p>
                   )}
-                  {job.duration_seconds && (
-                    <p className="mt-1 text-sm text-gray-400">
-                      Duration: {Math.round(job.duration_seconds)}s
-                    </p>
-                  )}
                 </div>
-              ) : (
-                <p className="text-gray-400">No jobs yet</p>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
