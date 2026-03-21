@@ -72,7 +72,7 @@ describe('MyComponent', () => {
 A pre-commit hook runs all tests before each commit. Tests must pass to commit.
 
 ### Test Failure Policy
-**IMPORTANT:** If an existing test fails, assume that it is identifying a regression until proven otherwise. Never modify an existing test without checking with the user first.
+**IMPORTANT:** If an existing test fails, assume that it is identifying a regression until proven otherwise. Never modify an existing test without checking with the user first. If a test fails after an intended change, ask the user before modifying the test.
 
 ## Architecture
 
