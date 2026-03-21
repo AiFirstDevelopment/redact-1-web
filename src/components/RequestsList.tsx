@@ -739,13 +739,27 @@ export function RequestsList({
                             try {
                               const details = log.details ? JSON.parse(log.details) : {};
                               const parts = [];
+                              // File context
                               if (details.filename) parts.push(`"${details.filename}"`);
                               if (details.old_filename && details.new_filename) {
                                 parts.push(`"${details.old_filename}" → "${details.new_filename}"`);
                               }
-                              if (details.status) parts.push(`status: ${details.status}`);
+                              // Detection context
+                              if (details.detection_type) {
+                                const detDesc = details.detection_type === 'face' ? 'Face' :
+                                               details.detection_type === 'manual' ? 'Manual redaction' : details.detection_type;
+                                const pageInfo = details.page_number ? ` on page ${details.page_number}` : '';
+                                const posInfo = details.position ? ` (${details.position})` : '';
+                                const newPosInfo = details.new_position ? ` moved to ${details.new_position}` : '';
+                                parts.push(`${detDesc}${pageInfo}${posInfo}${newPosInfo}`);
+                              }
+                              // Video track context
+                              if (details.track_id) parts.push(`track: ${details.track_id}`);
+                              // Status and code
+                              if (details.status) parts.push(`${details.status}`);
                               if (details.exemption_code) parts.push(`code: ${details.exemption_code}`);
                               if (details.count !== undefined) parts.push(`${details.count} detections`);
+                              // Note/comment
                               if (details.comment) parts.push(`note: "${details.comment}"`);
                               else if (details.status) parts.push(`note: ""`);
                               return parts.length > 0 ? (
