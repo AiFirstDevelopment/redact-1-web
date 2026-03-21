@@ -24,6 +24,7 @@ vi.mock('../services/api', () => ({
     startVideoDetection: vi.fn(),
     startVideoRedaction: vi.fn(),
     getVideoJobStatus: vi.fn(),
+    cancelVideoJob: vi.fn(),
   },
 }));
 
@@ -67,7 +68,7 @@ const mockDetections = [
     bbox_height: 0.2,
     track_id: 'face-001',
     status: 'approved',
-    comment: 'Officer face',
+    comment: null,
   },
 ];
 
@@ -114,9 +115,8 @@ describe('VideoReviewPage', () => {
     it('should not show Timeline tab', async () => {
       renderWithRouter();
 
-      // Wait for content to load by checking for something that should be there
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
+        expect(screen.getByText('Tracks')).toBeInTheDocument();
       });
 
       expect(screen.queryByText('Timeline')).not.toBeInTheDocument();
@@ -125,9 +125,8 @@ describe('VideoReviewPage', () => {
     it('should not show Detections header with count', async () => {
       renderWithRouter();
 
-      // Wait for content to load
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
+        expect(screen.getByText('Tracks')).toBeInTheDocument();
       });
 
       // Should not have a standalone "Detections (2)" header
@@ -139,129 +138,95 @@ describe('VideoReviewPage', () => {
     it('should not show video tabs when no redacted video exists', async () => {
       renderWithRouter();
 
-      // Wait for content to load
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
+        expect(screen.getByText('Tracks')).toBeInTheDocument();
       });
 
       expect(screen.queryByRole('button', { name: 'Original' })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Redacted' })).not.toBeInTheDocument();
     });
+
+    it('should not call getRedactedVideoStreamUrl when file has no redacted key', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('Tracks')).toBeInTheDocument();
+      });
+
+      // When redacted_s3_key is not set, getRedactedVideoStreamUrl should not be called
+      // or it should fail (which is the default mock behavior)
+      expect(api.getRedactedVideoStreamUrl).not.toHaveBeenCalled();
+    });
   });
 
-  describe('Detection Notes', () => {
-    it('should display existing comment on detection', async () => {
+  describe('Bulk Actions', () => {
+    it('should show bulk action buttons when pending detections exist', async () => {
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByText('"Officer face"')).toBeInTheDocument();
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('Reject All Pending')).toBeInTheDocument();
+    });
+
+    it('should show exemption code selector', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('(b)(7)(C) LE Privacy')).toBeInTheDocument();
       });
     });
 
-    it('should show note input when Approve is clicked on pending detection', async () => {
+    it('should show comment input for bulk actions', async () => {
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
-      });
-
-      // Find and click the Approve button on the pending detection
-      const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
-      const enabledApproveButton = approveButtons.find(btn => !btn.hasAttribute('disabled'));
-      expect(enabledApproveButton).toBeDefined();
-      fireEvent.click(enabledApproveButton!);
-
-      await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add note (optional)')).toBeInTheDocument();
-      });
-
-      expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-    });
-
-    it('should cancel note input when Cancel is clicked', async () => {
-      renderWithRouter();
-
-      await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
-      });
-
-      const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
-      const enabledApproveButton = approveButtons.find(btn => !btn.hasAttribute('disabled'));
-      fireEvent.click(enabledApproveButton!);
-
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-      });
-
-      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-      await waitFor(() => {
-        expect(screen.queryByPlaceholderText('Add note (optional)')).not.toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Comment (optional)')).toBeInTheDocument();
       });
     });
 
-    it('should call API with note when Confirm is clicked', async () => {
-      (api.updateVideoDetection as any).mockResolvedValue({
-        detection: { ...mockDetections[0], status: 'approved', comment: 'Test note' },
-      });
+    it('should call bulk update API when Approve All is clicked', async () => {
+      (api.bulkUpdateVideoDetections as any).mockResolvedValue({});
 
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
       });
 
-      // Click Approve on pending detection
-      const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
-      const enabledApproveButton = approveButtons.find(btn => !btn.hasAttribute('disabled'));
-      fireEvent.click(enabledApproveButton!);
+      fireEvent.click(screen.getByText('Approve All Pending'));
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Add note (optional)')).toBeInTheDocument();
-      });
-
-      // Type a note
-      const noteInput = screen.getByPlaceholderText('Add note (optional)');
-      fireEvent.change(noteInput, { target: { value: 'Test note' } });
-
-      // Click Confirm
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-
-      await waitFor(() => {
-        expect(api.updateVideoDetection).toHaveBeenCalledWith('det-1', {
+        expect(api.bulkUpdateVideoDetections).toHaveBeenCalledWith('file-1', {
+          track_id: undefined,
           status: 'approved',
-          comment: 'Test note',
+          exemption_code: 'b7c',
+          comment: undefined,
         });
       });
     });
 
-    it('should call API without note when Confirm is clicked with empty note', async () => {
-      (api.updateVideoDetection as any).mockResolvedValue({
-        detection: { ...mockDetections[0], status: 'approved' },
-      });
+    it('should include comment when provided', async () => {
+      (api.bulkUpdateVideoDetections as any).mockResolvedValue({});
 
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Comment (optional)')).toBeInTheDocument();
       });
 
-      const approveButtons = screen.getAllByRole('button', { name: 'Approve' });
-      const enabledApproveButton = approveButtons.find(btn => !btn.hasAttribute('disabled'));
-      fireEvent.click(enabledApproveButton!);
+      const commentInput = screen.getByPlaceholderText('Comment (optional)');
+      fireEvent.change(commentInput, { target: { value: 'Test comment' } });
+
+      fireEvent.click(screen.getByText('Approve All Pending'));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument();
-      });
-
-      // Click Confirm without entering a note
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
-
-      await waitFor(() => {
-        expect(api.updateVideoDetection).toHaveBeenCalledWith('det-1', {
+        expect(api.bulkUpdateVideoDetections).toHaveBeenCalledWith('file-1', {
+          track_id: undefined,
           status: 'approved',
-          comment: undefined,
+          exemption_code: 'b7c',
+          comment: 'Test comment',
         });
       });
     });
@@ -289,11 +254,13 @@ describe('VideoReviewPage', () => {
       expect(screen.getByText('2 segments')).toBeInTheDocument();
     });
 
-    it('should show All Detections heading', async () => {
+    it('should show track selection button', async () => {
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByText('All Detections')).toBeInTheDocument();
+        // Track appears in both timeline and sidebar - look for the button in sidebar
+        const trackButtons = screen.getAllByText('face-001');
+        expect(trackButtons.length).toBeGreaterThan(0);
       });
     });
   });
@@ -315,12 +282,91 @@ describe('VideoReviewPage', () => {
 
       renderWithRouter();
 
-      // Wait for the page to load by checking for the tracks section
       await waitFor(() => {
         expect(screen.getByText('Tracks')).toBeInTheDocument();
       });
 
       expect(screen.queryByText('Job Status')).not.toBeInTheDocument();
+    });
+
+    it('should show processing status with progress', async () => {
+      (api.getVideoJobStatus as any).mockResolvedValue({
+        job: { ...mockJob, status: 'processing', progress: 50 },
+      });
+
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('processing')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Track Selection', () => {
+    it('should update button text when track is selected', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
+      });
+
+      // Click on the track button in sidebar (it's a button element)
+      const trackButtons = screen.getAllByText('face-001');
+      const sidebarButton = trackButtons.find(el => el.closest('button'));
+      expect(sidebarButton).toBeDefined();
+      fireEvent.click(sidebarButton!.closest('button')!);
+
+      await waitFor(() => {
+        expect(screen.getByText('Approve Track face-001')).toBeInTheDocument();
+      });
+    });
+
+    it('should pass track_id to bulk update when track is selected', async () => {
+      (api.bulkUpdateVideoDetections as any).mockResolvedValue({});
+
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('Tracks')).toBeInTheDocument();
+      });
+
+      // Click on the track button in sidebar
+      const trackButtons = screen.getAllByText('face-001');
+      const sidebarButton = trackButtons.find(el => el.closest('button'));
+      fireEvent.click(sidebarButton!.closest('button')!);
+
+      await waitFor(() => {
+        expect(screen.getByText('Approve Track face-001')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Approve Track face-001'));
+
+      await waitFor(() => {
+        expect(api.bulkUpdateVideoDetections).toHaveBeenCalledWith('file-1', {
+          track_id: 'face-001',
+          status: 'approved',
+          exemption_code: 'b7c',
+          comment: undefined,
+        });
+      });
+    });
+  });
+
+  describe('Video Controls', () => {
+    it('should load video stream URL', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(api.getVideoStreamUrl).toHaveBeenCalledWith('file-1');
+      });
+    });
+
+    it('should show back button', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('← Back')).toBeInTheDocument();
+      });
     });
   });
 });

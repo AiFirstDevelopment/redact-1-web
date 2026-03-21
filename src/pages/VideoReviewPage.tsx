@@ -30,10 +30,6 @@ export function VideoReviewPage() {
   const [bulkComment, setBulkComment] = useState('');
   const [isStartingDetection, setIsStartingDetection] = useState(false);
 
-  // Note input state for individual detection actions
-  const [noteDetectionId, setNoteDetectionId] = useState<string | null>(null);
-  const [noteAction, setNoteAction] = useState<'approved' | 'rejected' | null>(null);
-  const [noteText, setNoteText] = useState('');
 
   // Load file and detections
   useEffect(() => {
@@ -246,17 +242,6 @@ export function VideoReviewPage() {
   };
 
   // Approve/reject single detection
-  const handleUpdateDetection = async (id: string, status: 'approved' | 'rejected', comment?: string) => {
-    try {
-      const { detection } = await api.updateVideoDetection(id, { status, comment });
-      setDetections(prev => prev.map(d => d.id === id ? detection : d));
-      setNoteDetectionId(null);
-      setNoteText('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update detection');
-    }
-  };
-
   // Bulk approve/reject by track
   const handleBulkUpdate = async (status: 'approved' | 'rejected') => {
     if (!fileId) return;
@@ -397,10 +382,10 @@ export function VideoReviewPage() {
           )}
 
           {/* Centered detection button overlay - show when no detections and no active job */}
-          {detections.length === 0 && !isStartingDetection && (!job || job.status === 'failed' || job.status === 'completed') && (
+          {detections.length === 0 && !isStartingDetection && (!job || ['failed', 'completed', 'cancelled'].includes(job.status)) && (
             <div className="absolute inset-0 flex items-center justify-center z-10">
               <div className="text-center">
-                {job?.status === 'failed' && job.error_message && (
+                {(job?.status === 'failed' || job?.status === 'cancelled') && job.error_message && (
                   <p className="text-yellow-400 mb-4">
                     {job.error_message === 'Cancelled by user' ? 'Detection cancelled' : job.error_message}
                   </p>
@@ -409,7 +394,7 @@ export function VideoReviewPage() {
                   onClick={handleStartDetection}
                   className="px-8 py-4 text-white text-xl font-semibold rounded-lg shadow-lg transition-colors bg-blue-600 hover:bg-blue-500"
                 >
-                  {job?.status === 'failed' ? 'Retry Detection' : 'Detect Faces'}
+                  {job?.status === 'failed' || job?.status === 'cancelled' ? 'Retry Detection' : 'Detect Faces'}
                 </button>
               </div>
             </div>
@@ -565,73 +550,6 @@ export function VideoReviewPage() {
               ))}
             </div>
 
-            {/* Detection list */}
-            <div className="space-y-2">
-              <h3 className="font-semibold">All Detections</h3>
-              {detections.map(det => (
-                <div
-                  key={det.id}
-                  onClick={() => seekToDetection(det)}
-                  className={`p-2 rounded cursor-pointer ${
-                    selectedDetection?.id === det.id ? 'ring-2 ring-blue-400' : ''
-                  } ${
-                    det.status === 'approved' ? 'bg-green-900/30' :
-                    det.status === 'rejected' ? 'bg-red-900/30' : 'bg-gray-700'
-                  }`}
-                >
-                  <div className="flex justify-between text-sm">
-                    <span>{det.track_id || 'manual'}</span>
-                    <span>{formatTime(det.start_time_ms)} - {formatTime(det.end_time_ms)}</span>
-                  </div>
-                  {det.comment && (
-                    <div className="text-xs text-gray-400 mt-1 italic">"{det.comment}"</div>
-                  )}
-                  {noteDetectionId === det.id ? (
-                    <div className="mt-2 space-y-2" onClick={e => e.stopPropagation()}>
-                      <input
-                        type="text"
-                        value={noteText}
-                        onChange={e => setNoteText(e.target.value)}
-                        placeholder="Add note (optional)"
-                        className="w-full p-1 bg-gray-600 rounded text-xs"
-                        autoFocus
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleUpdateDetection(det.id, noteAction!, noteText || undefined)}
-                          className={`flex-1 py-1 rounded text-xs ${noteAction === 'approved' ? 'bg-green-600' : 'bg-red-600'}`}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          onClick={() => { setNoteDetectionId(null); setNoteText(''); }}
-                          className="flex-1 py-1 bg-gray-600 rounded text-xs"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        onClick={e => { e.stopPropagation(); setNoteDetectionId(det.id); setNoteAction('approved'); setNoteText(''); }}
-                        className="flex-1 py-1 bg-green-600 rounded text-xs hover:bg-green-500"
-                        disabled={det.status === 'approved'}
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={e => { e.stopPropagation(); setNoteDetectionId(det.id); setNoteAction('rejected'); setNoteText(''); }}
-                        className="flex-1 py-1 bg-red-600 rounded text-xs hover:bg-red-500"
-                        disabled={det.status === 'rejected'}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
 
             {/* Job status */}
             {job && (

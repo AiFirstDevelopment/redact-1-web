@@ -137,7 +137,7 @@ export interface VideoJob {
   id: string;
   file_id: string;
   job_type: 'detection' | 'redaction';
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   error_message: string | null;
   aws_job_id: string | null;
