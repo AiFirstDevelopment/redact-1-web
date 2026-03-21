@@ -485,6 +485,85 @@ describe('RequestsList', () => {
   });
 
   // ============================================
+  // Notes Display Tests
+  // ============================================
+
+  describe('notes display', () => {
+    it('shows notes when request has notes', () => {
+      const requestWithNotes = {
+        ...mockRequest,
+        notes: 'Important case note',
+      };
+      renderRequestsList({ requests: [requestWithNotes] });
+
+      expect(screen.getByText('Important case note')).toBeInTheDocument();
+    });
+
+    it('does not show notes when request has no notes', () => {
+      const requestWithoutNotes = {
+        ...mockRequest,
+        notes: null,
+      };
+      renderRequestsList({ requests: [requestWithoutNotes] });
+
+      // The notes section should not be rendered
+      const notesElement = screen.queryByText(/Important case note/);
+      expect(notesElement).not.toBeInTheDocument();
+    });
+
+    it('does not show notes when notes is empty string', () => {
+      const requestWithEmptyNotes = {
+        ...mockRequest,
+        notes: '',
+      };
+      renderRequestsList({ requests: [requestWithEmptyNotes] });
+
+      // There should be no italic paragraph for notes (other than the "Add title..." which could exist)
+      const italicElements = document.querySelectorAll('p.italic');
+      // Filter to find notes-specific elements (should be none for empty notes)
+      const notesElements = Array.from(italicElements).filter(el =>
+        el.classList.contains('truncate')
+      );
+      expect(notesElements.length).toBe(0);
+    });
+
+    it('notes display has truncate class for long text', () => {
+      const requestWithLongNotes = {
+        ...mockRequest,
+        notes: 'This is a very long note that should be truncated when displayed on the card to prevent it from taking up too much space',
+      };
+      renderRequestsList({ requests: [requestWithLongNotes] });
+
+      const notesElement = screen.getByText(/This is a very long note/);
+      expect(notesElement.className).toContain('truncate');
+    });
+
+    it('notes display has full text in title attribute for tooltip', () => {
+      const longNote = 'This is a very long note that should show full text on hover';
+      const requestWithLongNotes = {
+        ...mockRequest,
+        notes: longNote,
+      };
+      renderRequestsList({ requests: [requestWithLongNotes] });
+
+      const notesElement = screen.getByTitle(longNote);
+      expect(notesElement).toBeInTheDocument();
+    });
+
+    it('notes display is styled in italic gray text', () => {
+      const requestWithNotes = {
+        ...mockRequest,
+        notes: 'Test note styling',
+      };
+      renderRequestsList({ requests: [requestWithNotes] });
+
+      const notesElement = screen.getByText('Test note styling');
+      expect(notesElement.className).toContain('italic');
+      expect(notesElement.className).toContain('text-gray-500');
+    });
+  });
+
+  // ============================================
   // Assignee Filter Tests
   // ============================================
 

@@ -451,6 +451,11 @@ export function RequestsList({
                   {request.title ? highlightMatch(request.title) : 'Add title...'}
                 </p>
               )}
+              {request.notes && (
+                <p className="text-sm text-gray-500 mt-1 italic truncate" title={request.notes}>
+                  {request.notes}
+                </p>
+              )}
               <p className="text-sm text-gray-500 mt-1">
                 <span title="Date request was received">Received: {formatDate(request.request_date)}</span>
                 {request.due_date && (
