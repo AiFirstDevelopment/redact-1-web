@@ -396,10 +396,10 @@ export function RequestsList({
     return (
       <div style={{ ...style, paddingBottom: 8 }}>
         <div
-          className={`bg-card-white rounded-lg border p-4 cursor-pointer transition-colors shadow-sm ${
+          className={`bg-card-white rounded-lg border p-4 cursor-pointer transition-all shadow-sm hover:shadow-md ${
             selectedId === request.id
-              ? 'border-blue-500 ring-2 ring-blue-200'
-              : 'border-gray-200 hover:border-gray-300'
+              ? 'border-blue-500 ring-2 ring-blue-100 shadow-md'
+              : 'border-slate-200 hover:border-slate-300'
           }`}
           onClick={() => onSelect(request)}
         >

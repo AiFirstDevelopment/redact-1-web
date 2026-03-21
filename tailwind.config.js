@@ -7,12 +7,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Rich harmonious theme - better contrast
-        'pastel-blue': '#CBBAB0',    // Dusty rose/taupe for login backgrounds
-        'pastel-peach': '#D4B8A8',   // Dusty rose for right drawer (matches tabs)
-        'pastel-mint': '#9B2D30',    // True brick red for header
-        'pastel-cream': '#D4B8A8',   // Warm dusty rose for tabs (bridges red/teal)
-        'card-white': '#FFF0DC',     // Warm peach/apricot for cards
+        // Professional slate blue theme - WCAG compliant
+        'pastel-blue': '#F1F5F9',    // Slate-100 for main backgrounds
+        'pastel-peach': '#F8FAFC',   // Slate-50 for right panel
+        'pastel-mint': '#1E3A5F',    // Deep navy blue for header
+        'pastel-cream': '#E2E8F0',   // Slate-200 for tabs area
+        'card-white': '#FFFFFF',     // Pure white for cards
       },
     },
   },

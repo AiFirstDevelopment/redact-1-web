@@ -376,7 +376,7 @@ describe('VideoReviewPage', () => {
         json: () => Promise.resolve({ file: { ...mockFile, request_id: 'req-123' } }),
       });
 
-      const { container } = renderWithRouter();
+      renderWithRouter();
 
       await waitFor(() => {
         expect(screen.getByText('← Back')).toBeInTheDocument();
