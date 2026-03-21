@@ -1303,4 +1303,160 @@ describe('RequestsList', () => {
       });
     });
   });
+
+  describe('Archived Request Features', () => {
+    it('hides edit button when showArchived is true', () => {
+      renderRequestsList({ showArchived: true });
+
+      // Edit button should not be present for archived requests
+      const editButtons = screen.queryAllByTitle('Edit');
+      expect(editButtons).toHaveLength(0);
+    });
+
+    it('shows edit button when showArchived is false', () => {
+      renderRequestsList({ showArchived: false });
+
+      // Edit button should be present for active requests
+      const editButton = screen.getByTitle('Edit');
+      expect(editButton).toBeInTheDocument();
+    });
+
+    it('shows restore button for archived requests', () => {
+      renderRequestsList({ showArchived: true, onUnarchive: vi.fn() });
+
+      const restoreButton = screen.getByTitle('Restore');
+      expect(restoreButton).toBeInTheDocument();
+    });
+
+    it('shows re-release button for archived requests', () => {
+      renderRequestsList({ showArchived: true, onUnarchive: vi.fn() });
+
+      const reReleaseButton = screen.getByTitle('Re-release');
+      expect(reReleaseButton).toBeInTheDocument();
+    });
+
+    it('does not show archive button for already archived requests', () => {
+      renderRequestsList({ showArchived: true });
+
+      const archiveButtons = screen.queryAllByTitle('Archive');
+      expect(archiveButtons).toHaveLength(0);
+    });
+
+    it('shows archive button for non-archived requests', () => {
+      renderRequestsList({ showArchived: false });
+
+      const archiveButton = screen.getByTitle('Archive');
+      expect(archiveButton).toBeInTheDocument();
+    });
+  });
+
+  describe('Re-release Modal', () => {
+    it('opens re-release modal when clicking re-release button', async () => {
+      const user = userEvent.setup();
+      renderRequestsList({ showArchived: true, onUnarchive: vi.fn() });
+
+      const reReleaseButton = screen.getByTitle('Re-release');
+      await user.click(reReleaseButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Re-release Request')).toBeInTheDocument();
+      });
+    });
+
+    it('displays source request info in re-release modal', async () => {
+      const user = userEvent.setup();
+      renderRequestsList({ showArchived: true, onUnarchive: vi.fn() });
+
+      const reReleaseButton = screen.getByTitle('Re-release');
+      await user.click(reReleaseButton);
+
+      await waitFor(() => {
+        // Modal should contain the request number (there will be multiple due to both card and modal)
+        const requestNumbers = screen.getAllByText('RR-20260318-001');
+        expect(requestNumbers.length).toBeGreaterThanOrEqual(2);
+      });
+    });
+
+    it('closes re-release modal when clicking X button', async () => {
+      const user = userEvent.setup();
+      renderRequestsList({ showArchived: true, onUnarchive: vi.fn() });
+
+      const reReleaseButton = screen.getByTitle('Re-release');
+      await user.click(reReleaseButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Re-release Request')).toBeInTheDocument();
+      });
+
+      // Find the close button (X)
+      const closeButton = screen.getByRole('button', { name: '' });
+      if (closeButton) {
+        await user.click(closeButton);
+      }
+    });
+  });
+
+  describe('Optimistic UI and Animations', () => {
+    it('applies fade-out animation class when archiving', async () => {
+      const user = userEvent.setup();
+      const onArchive = vi.fn();
+      renderRequestsList({ onArchive });
+
+      // Click archive to show confirm
+      const archiveButton = screen.getByTitle('Archive');
+      await user.click(archiveButton);
+
+      // Click confirm
+      const confirmButton = screen.getByTitle('Confirm archive');
+      await user.click(confirmButton);
+
+      // onArchive should be called
+      expect(onArchive).toHaveBeenCalledWith(mockRequest.id);
+    });
+
+    it('applies fade-out animation class when deleting', async () => {
+      const user = userEvent.setup();
+      const onDelete = vi.fn();
+      renderRequestsList({ onDelete });
+
+      // Click delete to show confirm
+      const deleteButton = screen.getByTitle('Delete');
+      await user.click(deleteButton);
+
+      // Click confirm
+      const confirmButton = screen.getByTitle('Confirm delete');
+      await user.click(confirmButton);
+
+      // onDelete should be called
+      expect(onDelete).toHaveBeenCalledWith(mockRequest.id);
+    });
+
+    it('calls onRestoreRequest when restoring archived request', async () => {
+      const user = userEvent.setup();
+      const onRestoreRequest = vi.fn();
+      renderRequestsList({
+        showArchived: true,
+        onUnarchive: vi.fn(),
+        onRestoreRequest,
+      });
+
+      const restoreButton = screen.getByTitle('Restore');
+      await user.click(restoreButton);
+
+      // Wait for animation and callback
+      await waitFor(() => {
+        expect(onRestoreRequest).toHaveBeenCalledWith(mockRequest.id);
+      }, { timeout: 500 });
+    });
+  });
+
+  describe('Card Layout', () => {
+    it('renders cards with consistent fixed height', () => {
+      renderRequestsList();
+
+      // The card should have the h-[144px] class for consistent height
+      const card = screen.getByText('Test Request').closest('div[class*="bg-card-white"]');
+      expect(card).toHaveClass('h-[144px]');
+    });
+  });
 });

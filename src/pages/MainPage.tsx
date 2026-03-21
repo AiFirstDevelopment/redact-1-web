@@ -25,6 +25,8 @@ export function MainPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [archivedSearchTerm, setArchivedSearchTerm] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [archivedRefreshKey] = useState(0);
   const debounceRef = useRef<NodeJS.Timeout>();
 
   const { requests, total, isLoading, isLoadingMore, fetchRequests, fetchMoreRequests } = useRequestStore();
@@ -135,10 +137,11 @@ export function MainPage() {
   const handleArchive = async (id: string) => {
     try {
       await api.archiveRequest(id);
-      fetchRequests();
+      // Optimistic UI - list already updated via removingIds
       if (selectedRequest?.id === id) {
         handleClosePanel();
       }
+      // Don't pre-fetch - it causes re-render issues. Archived tab will fetch on navigation.
     } catch (e) {
       console.error('Failed to archive request:', e);
     }
@@ -147,8 +150,7 @@ export function MainPage() {
   const handleUnarchive = async (id: string) => {
     try {
       await api.unarchiveRequest(id);
-      fetchArchivedRequests();
-      fetchRequests();
+      // Optimistic UI - list already updated via removingIds
       if (selectedRequest?.id === id) {
         handleClosePanel();
       }
@@ -157,14 +159,27 @@ export function MainPage() {
     }
   };
 
+  const handleRestoreRequest = async (id: string) => {
+    try {
+      await api.unarchiveRequest(id);
+      // Fetch fresh data first
+      const { requests: freshRequests, total: freshTotal } = await api.listRequests({ limit: 25, offset: 0 });
+      // Update the store directly
+      useRequestStore.setState({ requests: freshRequests, total: freshTotal });
+      // Switch to requests tab and force component remount
+      setActiveTab('requests');
+      setSearchTerm('');
+      setAssigneeFilter('');
+      setRefreshKey(k => k + 1);
+    } catch (e) {
+      console.error('Failed to restore request:', e);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try {
       await api.deleteRequest(id);
-      if (activeTab === 'archived') {
-        fetchArchivedRequests();
-      } else {
-        fetchRequests();
-      }
+      // Optimistic UI - list already updated via removingIds
       if (selectedRequest?.id === id) {
         handleClosePanel();
       }
@@ -223,6 +238,7 @@ export function MainPage() {
       case 'requests':
         return (
           <RequestsList
+            key={refreshKey}
             requests={requests}
             isLoading={isLoading}
             selectedId={selectedRequest?.id || null}
@@ -248,6 +264,7 @@ export function MainPage() {
       case 'archived':
         return (
           <RequestsList
+            key={archivedRefreshKey}
             requests={archivedRequests}
             isLoading={archivedLoading}
             selectedId={selectedRequest?.id || null}
@@ -255,7 +272,9 @@ export function MainPage() {
             onNewRequest={() => {}}
             onUnarchive={handleUnarchive}
             onDelete={handleDelete}
-            onRequestUpdated={() => fetchArchivedRequests(archivedSearchTerm || undefined)}
+            onRequestUpdated={() => fetchRequests()}
+            onSwitchToRequests={() => setActiveTab('requests')}
+            onRestoreRequest={handleRestoreRequest}
             showArchived
             searchTerm={archivedSearchTerm}
             onSearchChange={handleArchivedSearchChange}

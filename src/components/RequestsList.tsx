@@ -21,6 +21,8 @@ interface RequestsListProps {
   onUnarchive?: (id: string) => void;
   onDelete?: (id: string) => void;
   onRequestUpdated?: () => void;
+  onSwitchToRequests?: () => void;
+  onRestoreRequest?: (id: string) => void;
   showArchived?: boolean;
   searchTerm: string;
   onSearchChange: (term: string) => void;
@@ -41,6 +43,8 @@ export function RequestsList({
   onUnarchive,
   onDelete,
   onRequestUpdated,
+  onSwitchToRequests,
+  onRestoreRequest,
   showArchived = false,
   searchTerm,
   onSearchChange,
@@ -52,6 +56,8 @@ export function RequestsList({
 }: RequestsListProps) {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [archiveConfirm, setArchiveConfirm] = useState<string | null>(null);
+  const [animatingIds, setAnimatingIds] = useState<Set<string>>(new Set());
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [auditModalRequest, setAuditModalRequest] = useState<Request | null>(null);
@@ -63,6 +69,11 @@ export function RequestsList({
   const [users, setUsers] = useState<User[]>([]);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [downloadReadyMap, setDownloadReadyMap] = useState<Record<string, boolean>>({});
+
+  // Re-release (copy to new request) state
+  const [copyFromRequest, setCopyFromRequest] = useState<Request | null>(null);
+  const [isCopying, setIsCopying] = useState(false);
+  const [copyResult, setCopyResult] = useState<{ success: boolean; newRequestId?: string; filesCopied?: number; error?: string } | null>(null);
 
   useEffect(() => {
     const loadUsers = async () => {
@@ -966,8 +977,20 @@ export function RequestsList({
 
   const handleDelete = (id: string) => {
     if (deleteConfirm === id) {
-      onDelete?.(id);
+      // Start animation
+      setAnimatingIds(prev => new Set(prev).add(id));
       setDeleteConfirm(null);
+      // Call API optimistically (don't wait)
+      onDelete?.(id);
+      // Remove after animation
+      setTimeout(() => {
+        setRemovedIds(prev => new Set(prev).add(id));
+        setAnimatingIds(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 300);
     } else {
       setDeleteConfirm(id);
       setArchiveConfirm(null); // Cancel any pending archive
@@ -976,11 +999,98 @@ export function RequestsList({
 
   const handleArchive = (id: string) => {
     if (archiveConfirm === id) {
-      onArchive?.(id);
+      // Start animation
+      setAnimatingIds(prev => new Set(prev).add(id));
       setArchiveConfirm(null);
+      // Call API optimistically (don't wait)
+      onArchive?.(id);
+      // Remove after animation
+      setTimeout(() => {
+        setRemovedIds(prev => new Set(prev).add(id));
+        setAnimatingIds(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 300);
     } else {
       setArchiveConfirm(id);
       setDeleteConfirm(null); // Cancel any pending delete
+    }
+  };
+
+  const handleUnarchive = async (id: string) => {
+    // Start animation
+    setAnimatingIds(prev => new Set(prev).add(id));
+
+    // Remove from view after animation, then restore
+    setTimeout(async () => {
+      setRemovedIds(prev => new Set(prev).add(id));
+      setAnimatingIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      // Call restore handler after animation completes
+      await onRestoreRequest?.(id);
+    }, 300);
+  };
+
+  const handleCopyToNewRequest = async () => {
+    if (!copyFromRequest) return;
+
+    setIsCopying(true);
+    setCopyResult(null);
+
+    try {
+      // Create new request with reference to original
+      // Strip existing "Re-release: " prefix to avoid "Re-release: Re-release: ..."
+      const baseTitle = (copyFromRequest.title || copyFromRequest.request_number).replace(/^Re-release:\s*/i, '');
+      const newTitle = `Re-release: ${baseTitle}`;
+      const newNotes = `Re-release per court order. Original request: ${copyFromRequest.request_number}`;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev'}/api/requests`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${await api.getToken()}`,
+          },
+          body: JSON.stringify({
+            title: newTitle,
+            notes: newNotes,
+            request_date: Date.now(),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to create new request');
+      }
+
+      const { request: newRequest } = await response.json();
+
+      // Copy files from original request
+      const { count } = await api.copyFilesFromRequest(newRequest.id, copyFromRequest.id);
+
+      setCopyResult({
+        success: true,
+        newRequestId: newRequest.id,
+        filesCopied: count,
+      });
+
+      // Close modal, switch to requests tab, and refresh
+      setCopyFromRequest(null);
+      onSwitchToRequests?.();
+      onRequestUpdated?.();
+    } catch (err) {
+      setCopyResult({
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to copy request',
+      });
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -1053,15 +1163,20 @@ export function RequestsList({
     }
   }, [filteredRequests.length, listHeight, isLoadingMore, total, onLoadMore]);
 
+  // Filter out removed items, keep animating ones visible
+  const visibleRequests = filteredRequests.filter(r => !removedIds.has(r.id));
+
   // Row renderer for virtual list
   const Row = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const request = filteredRequests[index];
+    const request = visibleRequests[index];
     if (!request) return null;
 
+    const isAnimating = animatingIds.has(request.id);
+
     return (
-      <div style={{ ...style, paddingBottom: 8 }}>
+      <div style={{ ...style, paddingBottom: 8 }} className={isAnimating ? 'animate-fade-out' : ''}>
         <div
-          className={`bg-card-white rounded-lg border p-4 cursor-pointer transition-all shadow-sm hover:shadow-md ${
+          className={`bg-card-white rounded-lg border p-4 cursor-pointer transition-all shadow-sm hover:shadow-md h-[144px] ${
             selectedId === request.id
               ? 'border-blue-500 ring-2 ring-blue-100 shadow-md'
               : 'border-slate-200 hover:border-slate-300'
@@ -1170,18 +1285,20 @@ export function RequestsList({
               </div>
             </div>
             <div className="flex gap-1 ml-4">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect(request);
-                }}
-                className="p-2 text-gray-400 hover:text-blue-600"
-                title="Edit"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
-              </button>
+              {!showArchived && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(request);
+                  }}
+                  className="p-2 text-gray-400 hover:text-blue-600"
+                  title="Edit"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={(e) => openAuditModal(e, request)}
                 className="p-2 text-gray-400 hover:text-purple-600"
@@ -1212,18 +1329,32 @@ export function RequestsList({
                 </button>
               )}
               {showArchived ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onUnarchive?.(request.id);
-                  }}
-                  className="p-2 text-gray-400 hover:text-blue-600"
-                  title="Restore"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                  </svg>
-                </button>
+                <>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUnarchive(request.id);
+                    }}
+                    className="p-2 text-gray-400 hover:text-blue-600"
+                    title="Restore"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCopyFromRequest(request);
+                    }}
+                    className="p-2 text-gray-400 hover:text-purple-600"
+                    title="Re-release"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </>
               ) : archiveConfirm === request.id ? (
                 <div className="flex items-center bg-yellow-500 rounded-full shadow-sm" title="Archive">
                   <button
@@ -1313,7 +1444,7 @@ export function RequestsList({
         </div>
       </div>
     );
-  }, [filteredRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, downloadProgress, showArchived, searchTerm, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated, openAuditModal]);
+  }, [visibleRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, downloadProgress, showArchived, searchTerm, animatingIds, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated, openAuditModal]);
 
   return (
     <div className="p-6 bg-pastel-blue min-h-full">
@@ -1422,6 +1553,107 @@ export function RequestsList({
         </div>
       )}
 
+      {/* Copy to New Request Modal */}
+      {copyFromRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => !isCopying && setCopyFromRequest(null)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-semibold">Re-release Request</h3>
+              {!isCopying && (
+                <button
+                  onClick={() => setCopyFromRequest(null)}
+                  className="p-1 text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <div className="p-4">
+              {copyResult ? (
+                copyResult.success ? (
+                  <div className="text-center">
+                    <div className="text-green-600 mb-2">
+                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <p className="text-lg font-semibold mb-2">Request Created</p>
+                    <p className="text-gray-600 mb-4">
+                      {copyResult.filesCopied} file{copyResult.filesCopied !== 1 ? 's' : ''} copied to new request
+                    </p>
+                    <button
+                      onClick={() => {
+                        setCopyFromRequest(null);
+                        setCopyResult(null);
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                      Done
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <div className="text-red-600 mb-2">
+                      <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <p className="text-lg font-semibold mb-2">Failed</p>
+                    <p className="text-gray-600 mb-4">{copyResult.error}</p>
+                    <button
+                      onClick={() => setCopyResult(null)}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                    >
+                      Try Again
+                    </button>
+                  </div>
+                )
+              ) : isCopying ? (
+                <div className="text-center py-4">
+                  <svg className="w-8 h-8 animate-spin mx-auto text-blue-600 mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <p className="text-gray-600">Creating new request and copying files...</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-gray-600 mb-4">
+                    This will create a new request with copies of all files from:
+                  </p>
+                  <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                    <p className="font-semibold">{copyFromRequest.request_number}</p>
+                    {copyFromRequest.title && (
+                      <p className="text-sm text-gray-600">{copyFromRequest.title}</p>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Files will be copied to the new request without any redaction decisions.
+                    You will need to review and make new redaction decisions.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setCopyFromRequest(null)}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCopyToNewRequest}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                      Create Re-release
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">
@@ -1476,7 +1708,7 @@ export function RequestsList({
       {/* List */}
       {isLoading ? (
         <div className="text-center py-8 text-gray-500">Loading...</div>
-      ) : filteredRequests.length === 0 ? (
+      ) : visibleRequests.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
           {searchTerm ? 'No matching requests found.' : 'No requests yet.'}
         </div>
@@ -1484,7 +1716,7 @@ export function RequestsList({
         <div ref={containerRef}>
           <List
             height={listHeight}
-            itemCount={filteredRequests.length}
+            itemCount={visibleRequests.length}
             itemSize={160}
             width="100%"
             onScroll={handleScroll}

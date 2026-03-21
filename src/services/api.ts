@@ -127,6 +127,13 @@ class ApiService {
     return this.fetch(`/api/requests/${requestId}/files`);
   }
 
+  async copyFilesFromRequest(targetRequestId: string, sourceRequestId: string): Promise<{ files: EvidenceFile[]; count: number }> {
+    return this.fetch(`/api/requests/${targetRequestId}/copy-files`, {
+      method: 'POST',
+      body: JSON.stringify({ source_request_id: sourceRequestId }),
+    });
+  }
+
   uploadFile(
     requestId: string,
     file: File,
