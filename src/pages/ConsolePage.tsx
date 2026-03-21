@@ -1318,16 +1318,15 @@ export function ConsolePage() {
                                   {adminLoading ? 'Deleting...' : 'Delete'}
                                 </button>
                               </div>
-                            ) : (
+                            ) : !isLastSupervisor ? (
                               <button
                                 onClick={() => handleDeleteUser(user)}
-                                disabled={isLastSupervisor}
-                                title={isLastSupervisor ? 'Cannot delete the last supervisor' : 'Delete user'}
-                                className="px-3 py-1 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/30 disabled:text-gray-600 disabled:hover:bg-transparent disabled:cursor-not-allowed rounded"
+                                title="Delete user"
+                                className="px-3 py-1 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded"
                               >
                                 Delete
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                         {isConfirming && isSupervisor && (

@@ -1088,6 +1088,105 @@ describe('ConsolePage', () => {
     });
   });
 
+  describe('Admin Tab - Delete User', () => {
+    it('should hide delete button for last supervisor in agency', async () => {
+      // Mock only one supervisor for the agency
+      (api.consoleGetRecentUsers as ReturnType<typeof vi.fn>).mockResolvedValue({
+        users: [
+          { id: 'user-1', email: 'admin@demo.gov', name: 'Admin User', role: 'supervisor', created_at: 1234567890, agency_name: 'Demo PD' },
+        ],
+      });
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Monitoring')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Admin' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('DEMO')).toBeInTheDocument();
+      });
+
+      const userCountButtons = screen.getAllByTitle('View users');
+      fireEvent.click(userCountButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Users in DEMO')).toBeInTheDocument();
+      });
+
+      // Last supervisor should not have a delete button
+      expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    });
+
+    it('should show delete button for supervisors when there are multiple', async () => {
+      // Mock two supervisors for the agency
+      (api.consoleGetRecentUsers as ReturnType<typeof vi.fn>).mockResolvedValue({
+        users: [
+          { id: 'user-1', email: 'admin@demo.gov', name: 'Admin User', role: 'supervisor', created_at: 1234567890, agency_name: 'Demo PD' },
+          { id: 'user-2', email: 'admin2@demo.gov', name: 'Admin User 2', role: 'supervisor', created_at: 1234567891, agency_name: 'Demo PD' },
+        ],
+      });
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Monitoring')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Admin' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('DEMO')).toBeInTheDocument();
+      });
+
+      const userCountButtons = screen.getAllByTitle('View users');
+      fireEvent.click(userCountButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Users in DEMO')).toBeInTheDocument();
+      });
+
+      // Should have delete buttons for both supervisors
+      const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+      expect(deleteButtons).toHaveLength(2);
+    });
+
+    it('should always show delete button for clerks', async () => {
+      // Mock one supervisor and one clerk
+      (api.consoleGetRecentUsers as ReturnType<typeof vi.fn>).mockResolvedValue({
+        users: [
+          { id: 'user-1', email: 'admin@demo.gov', name: 'Admin User', role: 'supervisor', created_at: 1234567890, agency_name: 'Demo PD' },
+          { id: 'user-2', email: 'clerk@demo.gov', name: 'Clerk User', role: 'clerk', created_at: 1234567891, agency_name: 'Demo PD' },
+        ],
+      });
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Monitoring')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Admin' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('DEMO')).toBeInTheDocument();
+      });
+
+      const userCountButtons = screen.getAllByTitle('View users');
+      fireEvent.click(userCountButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Users in DEMO')).toBeInTheDocument();
+      });
+
+      // Should have one delete button (for clerk only, since there's only one supervisor)
+      const deleteButtons = screen.getAllByRole('button', { name: 'Delete' });
+      expect(deleteButtons).toHaveLength(1);
+    });
+  });
+
   describe('Monitoring Tab - Pause Controls', () => {
     it('should open pause confirmation modal when Pause button is clicked', async () => {
       render(<ConsolePage />);
