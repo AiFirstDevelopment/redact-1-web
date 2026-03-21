@@ -10,7 +10,7 @@ import { useRequestStore } from '../stores/requestStore';
 import { api } from '../services/api';
 import type { Request } from '../types';
 
-type Tab = 'requests' | 'archived' | 'users' | 'settings';
+type Tab = 'intake' | 'requests' | 'archived' | 'users' | 'settings';
 type RightPanel = 'detail' | 'new' | null;
 
 export function MainPage() {
@@ -22,6 +22,11 @@ export function MainPage() {
   const [archivedTotal, setArchivedTotal] = useState(0);
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [archivedLoadingMore, setArchivedLoadingMore] = useState(false);
+  const [intakeRequests, setIntakeRequests] = useState<Request[]>([]);
+  const [intakeTotal, setIntakeTotal] = useState(0);
+  const [intakeLoading, setIntakeLoading] = useState(false);
+  const [intakeLoadingMore, setIntakeLoadingMore] = useState(false);
+  const [intakeSearchTerm, setIntakeSearchTerm] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [archivedSearchTerm, setArchivedSearchTerm] = useState('');
   const [assigneeFilter, setAssigneeFilter] = useState('');
@@ -90,6 +95,51 @@ export function MainPage() {
       setArchivedLoadingMore(false);
     }
   }, [archivedLoadingMore, archivedRequests.length, archivedTotal, archivedSearchTerm]);
+
+  const fetchIntakeRequests = useCallback(async (search?: string, reset = true) => {
+    if (reset) {
+      setIntakeLoading(true);
+      try {
+        const { requests, total } = await api.listIntakeRequests({ search, offset: 0, limit: 25 });
+        setIntakeRequests(requests);
+        setIntakeTotal(total);
+      } catch (e) {
+        console.error('Failed to fetch intake requests:', e);
+      } finally {
+        setIntakeLoading(false);
+      }
+    }
+  }, []);
+
+  const fetchMoreIntakeRequests = useCallback(async () => {
+    if (intakeLoadingMore || intakeRequests.length >= intakeTotal) return;
+    setIntakeLoadingMore(true);
+    try {
+      const { requests: newRequests } = await api.listIntakeRequests({
+        search: intakeSearchTerm || undefined,
+        offset: intakeRequests.length,
+        limit: 25,
+      });
+      setIntakeRequests(prev => [...prev, ...newRequests]);
+    } catch (e) {
+      console.error('Failed to fetch more intake requests:', e);
+    } finally {
+      setIntakeLoadingMore(false);
+    }
+  }, [intakeLoadingMore, intakeRequests.length, intakeTotal, intakeSearchTerm]);
+
+  // Debounced search for intake requests
+  useEffect(() => {
+    if (activeTab === 'intake') {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        fetchIntakeRequests(intakeSearchTerm || undefined);
+      }, 300);
+      return () => {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+      };
+    }
+  }, [activeTab, intakeSearchTerm, fetchIntakeRequests]);
 
   // Debounced search for archived requests
   useEffect(() => {
@@ -201,6 +251,25 @@ export function MainPage() {
     setArchivedSearchTerm(term);
   };
 
+  const handleIntakeSearchChange = (term: string) => {
+    setIntakeSearchTerm(term);
+  };
+
+  const handleAssignRequest = async (requestId: string, userId: string) => {
+    try {
+      const { request: assignedRequest } = await api.assignRequest(requestId, userId);
+      // Add to requests store directly (appears at top of list)
+      useRequestStore.setState(state => ({
+        requests: [assignedRequest, ...state.requests],
+        total: state.total + 1
+      }));
+      // Update intake total (the visual removal is handled by RequestsList animation)
+      setIntakeTotal(prev => prev - 1);
+    } catch (e) {
+      console.error('Failed to assign request:', e);
+    }
+  };
+
   const handleAssigneeFilterChange = (assignee: string) => {
     setAssigneeFilter(assignee);
   };
@@ -235,6 +304,26 @@ export function MainPage() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'intake':
+        return (
+          <RequestsList
+            requests={intakeRequests}
+            isLoading={intakeLoading}
+            selectedId={selectedRequest?.id || null}
+            onSelect={handleSelectRequest}
+            onNewRequest={() => {}}
+            onRequestUpdated={() => fetchIntakeRequests(intakeSearchTerm || undefined)}
+            searchTerm={intakeSearchTerm}
+            onSearchChange={handleIntakeSearchChange}
+            assigneeFilter=""
+            onAssigneeFilterChange={() => {}}
+            total={intakeTotal}
+            onLoadMore={fetchMoreIntakeRequests}
+            isLoadingMore={intakeLoadingMore}
+            showIntake
+            onAssignRequest={handleAssignRequest}
+          />
+        );
       case 'requests':
         return (
           <RequestsList

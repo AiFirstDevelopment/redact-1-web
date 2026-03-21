@@ -152,6 +152,24 @@ export const handlers = [
     return HttpResponse.json({ requests: [], total: 0, limit, offset });
   }),
 
+  http.get(`${API_BASE}/api/requests/intake`, ({ request }) => {
+    const url = new URL(request.url);
+    const limit = parseInt(url.searchParams.get('limit') || '25', 10);
+    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
+    return HttpResponse.json({ requests: [], total: 0, limit, offset });
+  }),
+
+  http.post(`${API_BASE}/api/requests/:id/assign`, async ({ params, request }) => {
+    const body = await request.json() as { assign_to: string };
+    return HttpResponse.json({
+      request: {
+        ...mockRequest,
+        id: params.id as string,
+        created_by: body.assign_to,
+      },
+    });
+  }),
+
   http.get(`${API_BASE}/api/requests/:id`, ({ params }) => {
     if (params.id === 'req-1') {
       return HttpResponse.json({ request: mockRequest });

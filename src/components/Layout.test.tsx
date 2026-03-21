@@ -58,10 +58,46 @@ describe('Layout', () => {
         </Layout>
       );
 
+      expect(screen.getByText('Intake')).toBeInTheDocument();
       expect(screen.getByText('Requests')).toBeInTheDocument();
       expect(screen.getByText('Archived')).toBeInTheDocument();
       expect(screen.getByText('Users')).toBeInTheDocument();
       expect(screen.getByText('Settings')).toBeInTheDocument();
+    });
+
+    it('should show Intake tab as first tab for supervisor', () => {
+      render(
+        <Layout activeTab="requests" onTabChange={mockOnTabChange}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      const tabs = screen.getAllByRole('button').filter(btn =>
+        ['Intake', 'Requests', 'Archived', 'Users', 'Settings'].includes(btn.textContent || '')
+      );
+      expect(tabs[0].textContent).toBe('Intake');
+    });
+
+    it('should call onTabChange with intake when Intake tab is clicked', () => {
+      render(
+        <Layout activeTab="requests" onTabChange={mockOnTabChange}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      fireEvent.click(screen.getByText('Intake'));
+      expect(mockOnTabChange).toHaveBeenCalledWith('intake');
+    });
+
+    it('should highlight Intake tab when active', () => {
+      render(
+        <Layout activeTab="intake" onTabChange={mockOnTabChange}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      const intakeTab = screen.getByText('Intake');
+      expect(intakeTab.className).toContain('border-blue-600');
     });
 
     it('should call onTabChange when Settings tab is clicked', () => {
@@ -95,7 +131,7 @@ describe('Layout', () => {
       });
     });
 
-    it('should hide Users and Settings tabs for clerk', () => {
+    it('should hide Intake, Users and Settings tabs for clerk', () => {
       render(
         <Layout activeTab="requests" onTabChange={mockOnTabChange}>
           <div>Content</div>
@@ -104,6 +140,7 @@ describe('Layout', () => {
 
       expect(screen.getByText('Requests')).toBeInTheDocument();
       expect(screen.getByText('Archived')).toBeInTheDocument();
+      expect(screen.queryByText('Intake')).not.toBeInTheDocument();
       expect(screen.queryByText('Users')).not.toBeInTheDocument();
       expect(screen.queryByText('Settings')).not.toBeInTheDocument();
     });
@@ -119,6 +156,16 @@ describe('Layout', () => {
         ['Requests', 'Archived'].includes(btn.textContent || '')
       );
       expect(tabs).toHaveLength(2);
+    });
+
+    it('should not show Intake tab for clerk', () => {
+      render(
+        <Layout activeTab="requests" onTabChange={mockOnTabChange}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      expect(screen.queryByText('Intake')).not.toBeInTheDocument();
     });
   });
 

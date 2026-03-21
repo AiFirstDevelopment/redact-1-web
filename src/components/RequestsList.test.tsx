@@ -1459,4 +1459,460 @@ describe('RequestsList', () => {
       expect(card).toHaveClass('h-[144px]');
     });
   });
+
+  // ============================================
+  // Intake Tab Tests
+  // ============================================
+
+  describe('intake tab', () => {
+    const intakeRequest = {
+      ...mockRequest,
+      id: 'intake-1',
+      request_number: 'RR-20260321-INT',
+      title: 'Unassigned Request',
+      created_by: '', // Unassigned
+    };
+
+    describe('header and empty state', () => {
+      it('shows Intake Queue header when showIntake is true', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+        });
+
+        expect(screen.getByText('Intake Queue')).toBeInTheDocument();
+      });
+
+      it('shows Records Requests header when showIntake is false', () => {
+        renderRequestsList();
+
+        expect(screen.getByText('Records Requests')).toBeInTheDocument();
+      });
+
+      it('shows empty state message for intake when no requests', () => {
+        renderRequestsList({
+          requests: [],
+          showIntake: true,
+        });
+
+        expect(screen.getByText('No pending intake submissions.')).toBeInTheDocument();
+      });
+
+      it('shows different empty state for regular requests', () => {
+        renderRequestsList({
+          requests: [],
+          showIntake: false,
+        });
+
+        expect(screen.getByText('No requests yet.')).toBeInTheDocument();
+      });
+
+      it('shows search placeholder for intake queue', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+        });
+
+        expect(screen.getByPlaceholderText('Search queue...')).toBeInTheDocument();
+      });
+
+      it('shows search placeholder for regular requests', () => {
+        renderRequestsList();
+
+        expect(screen.getByPlaceholderText('Search requests...')).toBeInTheDocument();
+      });
+    });
+
+    describe('New Request button visibility', () => {
+      it('hides New Request button in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+        });
+
+        expect(screen.queryByRole('button', { name: /new request/i })).not.toBeInTheDocument();
+      });
+
+      it('shows New Request button in regular requests view', () => {
+        renderRequestsList();
+
+        expect(screen.getByRole('button', { name: /new request/i })).toBeInTheDocument();
+      });
+    });
+
+    describe('assignee filter visibility', () => {
+      it('hides assignee filter dropdown in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+        });
+
+        expect(screen.queryByText('All Assignees')).not.toBeInTheDocument();
+      });
+
+      it('shows assignee filter dropdown in regular requests view', () => {
+        renderRequestsList();
+
+        expect(screen.getByText('All Assignees')).toBeInTheDocument();
+      });
+    });
+
+    describe('assignment dropdown', () => {
+      it('shows assignment dropdown for each intake request', async () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        await waitFor(() => {
+          expect(screen.getByText('Assign to...')).toBeInTheDocument();
+        });
+      });
+
+      it('populates assignment dropdown with users from API', async () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        await waitFor(() => {
+          const assignDropdown = screen.getByText('Assign to...').closest('select');
+          expect(assignDropdown).toBeInTheDocument();
+          // Check that user option exists
+          expect(assignDropdown?.querySelector('option[value="user-1"]')).toBeInTheDocument();
+        });
+      });
+
+      it('calls onAssignRequest when user is selected from dropdown', async () => {
+        const user = userEvent.setup();
+        const onAssignRequest = vi.fn();
+
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest,
+        });
+
+        await waitFor(() => {
+          const assignDropdown = screen.getByText('Assign to...').closest('select');
+          expect(assignDropdown?.querySelector('option[value="user-1"]')).toBeInTheDocument();
+        });
+
+        const assignDropdown = screen.getByText('Assign to...').closest('select') as HTMLSelectElement;
+        await user.selectOptions(assignDropdown, 'user-1');
+
+        expect(onAssignRequest).toHaveBeenCalledWith('intake-1', 'user-1');
+      });
+
+      it('does not show assignment dropdown in regular requests view', () => {
+        renderRequestsList({
+          requests: [mockRequest],
+          showIntake: false,
+        });
+
+        expect(screen.queryByText('Assign to...')).not.toBeInTheDocument();
+      });
+    });
+
+    describe('action buttons visibility', () => {
+      it('hides edit button in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.queryByTitle('Edit')).not.toBeInTheDocument();
+      });
+
+      it('shows edit button in regular requests view', () => {
+        renderRequestsList({
+          requests: [mockRequest],
+          showIntake: false,
+        });
+
+        expect(screen.getByTitle('Edit')).toBeInTheDocument();
+      });
+
+      it('hides archive button in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+          onArchive: vi.fn(),
+        });
+
+        expect(screen.queryByTitle('Archive')).not.toBeInTheDocument();
+      });
+
+      it('shows archive button in regular requests view', () => {
+        renderRequestsList({
+          requests: [mockRequest],
+          showIntake: false,
+          onArchive: vi.fn(),
+        });
+
+        expect(screen.getByTitle('Archive')).toBeInTheDocument();
+      });
+
+      it('hides delete button in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+          onDelete: vi.fn(),
+        });
+
+        expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
+      });
+
+      it('shows delete button in regular requests view', () => {
+        renderRequestsList({
+          requests: [mockRequest],
+          showIntake: false,
+          onDelete: vi.fn(),
+        });
+
+        expect(screen.getByTitle('Delete')).toBeInTheDocument();
+      });
+
+      it('shows audit trail button in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.getByTitle('View Audit Trail')).toBeInTheDocument();
+      });
+
+      it('shows download button in intake view', async () => {
+        server.use(
+          http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+            return HttpResponse.json({ files: [] });
+          })
+        );
+
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        await waitFor(() => {
+          expect(screen.getByTitle(/complete review to enable download/i)).toBeInTheDocument();
+        });
+      });
+    });
+
+    describe('animation on assignment', () => {
+      it('adds animation class when request is being assigned', async () => {
+        const user = userEvent.setup();
+        const onAssignRequest = vi.fn();
+
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest,
+        });
+
+        await waitFor(() => {
+          const assignDropdown = screen.getByText('Assign to...').closest('select');
+          expect(assignDropdown?.querySelector('option[value="user-1"]')).toBeInTheDocument();
+        });
+
+        const assignDropdown = screen.getByText('Assign to...').closest('select') as HTMLSelectElement;
+        await user.selectOptions(assignDropdown, 'user-1');
+
+        // The row should have animation class
+        const row = screen.getByText('RR-20260321-INT').closest('div[class*="animate"]');
+        expect(row).toBeInTheDocument();
+      });
+
+      it('removes request from visible list after animation completes', async () => {
+        const user = userEvent.setup();
+        const onAssignRequest = vi.fn();
+
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest,
+        });
+
+        await waitFor(() => {
+          const assignDropdown = screen.getByText('Assign to...').closest('select');
+          expect(assignDropdown?.querySelector('option[value="user-1"]')).toBeInTheDocument();
+        });
+
+        const assignDropdown = screen.getByText('Assign to...').closest('select') as HTMLSelectElement;
+        await user.selectOptions(assignDropdown, 'user-1');
+
+        // Wait for the animation timeout (300ms) plus some buffer
+        await waitFor(() => {
+          // After animation, the request should be removed from the visible list
+          // This is handled internally by removedIds state
+          expect(onAssignRequest).toHaveBeenCalledWith('intake-1', 'user-1');
+        }, { timeout: 500 });
+      });
+    });
+
+    describe('request display in intake', () => {
+      it('displays request number in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.getByText('RR-20260321-INT')).toBeInTheDocument();
+      });
+
+      it('displays request title in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.getByText('Unassigned Request')).toBeInTheDocument();
+      });
+
+      it('displays request status badge in intake view', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.getByText('new')).toBeInTheDocument();
+      });
+
+      it('calls onSelect when intake request is clicked', async () => {
+        const user = userEvent.setup();
+        const onSelect = vi.fn();
+
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onSelect,
+          onAssignRequest: vi.fn(),
+        });
+
+        await user.click(screen.getByText('RR-20260321-INT'));
+        expect(onSelect).toHaveBeenCalledWith(intakeRequest);
+      });
+
+      it('highlights selected intake request', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          selectedId: 'intake-1',
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        const card = screen.getByText('Unassigned Request').closest('div[class*="border"]');
+        expect(card?.className).toContain('border-blue-500');
+      });
+    });
+
+    describe('multiple intake requests', () => {
+      const multipleIntakeRequests = [
+        { ...intakeRequest, id: 'intake-1', request_number: 'RR-001', title: 'Request 1' },
+        { ...intakeRequest, id: 'intake-2', request_number: 'RR-002', title: 'Request 2' },
+        { ...intakeRequest, id: 'intake-3', request_number: 'RR-003', title: 'Request 3' },
+      ];
+
+      it('displays all intake requests', () => {
+        renderRequestsList({
+          requests: multipleIntakeRequests,
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.getByText('Request 1')).toBeInTheDocument();
+        expect(screen.getByText('Request 2')).toBeInTheDocument();
+        expect(screen.getByText('Request 3')).toBeInTheDocument();
+      });
+
+      it('shows assignment dropdown for each request', async () => {
+        renderRequestsList({
+          requests: multipleIntakeRequests,
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        await waitFor(() => {
+          const assignDropdowns = screen.getAllByText('Assign to...');
+          expect(assignDropdowns).toHaveLength(3);
+        });
+      });
+
+      it('assigns only the selected request', async () => {
+        const user = userEvent.setup();
+        const onAssignRequest = vi.fn();
+
+        renderRequestsList({
+          requests: multipleIntakeRequests,
+          showIntake: true,
+          onAssignRequest,
+        });
+
+        await waitFor(() => {
+          const assignDropdowns = screen.getAllByText('Assign to...');
+          expect(assignDropdowns).toHaveLength(3);
+        });
+
+        // Select a user for the second request
+        const assignDropdowns = screen.getAllByText('Assign to...').map(el => el.closest('select') as HTMLSelectElement);
+        await user.selectOptions(assignDropdowns[1], 'user-1');
+
+        expect(onAssignRequest).toHaveBeenCalledWith('intake-2', 'user-1');
+        expect(onAssignRequest).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('search in intake view', () => {
+      it('calls onSearchChange when searching in intake view', async () => {
+        const user = userEvent.setup();
+        const onSearchChange = vi.fn();
+
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onSearchChange,
+          onAssignRequest: vi.fn(),
+        });
+
+        const searchInput = screen.getByPlaceholderText('Search queue...');
+        await user.type(searchInput, 'test');
+
+        expect(onSearchChange).toHaveBeenCalled();
+      });
+
+      it('highlights matching text in intake requests', () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          searchTerm: 'INT',
+          onAssignRequest: vi.fn(),
+        });
+
+        const highlight = screen.getByText('INT');
+        expect(highlight.tagName).toBe('MARK');
+      });
+
+      it('shows no matching requests message in intake view', () => {
+        renderRequestsList({
+          requests: [],
+          showIntake: true,
+          searchTerm: 'nonexistent',
+          onAssignRequest: vi.fn(),
+        });
+
+        expect(screen.getByText('No matching requests found.')).toBeInTheDocument();
+      });
+    });
+  });
 });

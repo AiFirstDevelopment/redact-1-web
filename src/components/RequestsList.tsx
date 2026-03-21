@@ -24,6 +24,8 @@ interface RequestsListProps {
   onSwitchToRequests?: () => void;
   onRestoreRequest?: (id: string) => void;
   showArchived?: boolean;
+  showIntake?: boolean;
+  onAssignRequest?: (requestId: string, userId: string) => void;
   searchTerm: string;
   onSearchChange: (term: string) => void;
   assigneeFilter: string;
@@ -46,6 +48,8 @@ export function RequestsList({
   onSwitchToRequests,
   onRestoreRequest,
   showArchived = false,
+  showIntake = false,
+  onAssignRequest,
   searchTerm,
   onSearchChange,
   assigneeFilter,
@@ -1285,7 +1289,7 @@ export function RequestsList({
               </div>
             </div>
             <div className="flex gap-1 ml-4">
-              {!showArchived && (
+              {!showArchived && !showIntake && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -1298,6 +1302,38 @@ export function RequestsList({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                   </svg>
                 </button>
+              )}
+              {showIntake && (
+                <select
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    if (e.target.value && onAssignRequest) {
+                      const userId = e.target.value;
+                      // Start animation
+                      setAnimatingIds(prev => new Set(prev).add(request.id));
+                      // Call API
+                      onAssignRequest(request.id, userId);
+                      // Remove after animation
+                      setTimeout(() => {
+                        setRemovedIds(prev => new Set(prev).add(request.id));
+                        setAnimatingIds(prev => {
+                          const next = new Set(prev);
+                          next.delete(request.id);
+                          return next;
+                        });
+                      }, 300);
+                    }
+                  }}
+                  value=""
+                  className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Assign to...</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
               )}
               <button
                 onClick={(e) => openAuditModal(e, request)}
@@ -1328,7 +1364,7 @@ export function RequestsList({
                   </svg>
                 </button>
               )}
-              {showArchived ? (
+              {showIntake ? null : showArchived ? (
                 <>
                   <button
                     onClick={(e) => {
@@ -1397,7 +1433,7 @@ export function RequestsList({
                   </svg>
                 </button>
               )}
-              {deleteConfirm === request.id ? (
+              {!showIntake && (deleteConfirm === request.id ? (
                 <div className="flex items-center bg-red-500 rounded-full shadow-sm" title="Delete">
                   <button
                     onClick={(e) => {
@@ -1438,13 +1474,13 @@ export function RequestsList({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
-              )}
+              ))}
             </div>
           </div>
         </div>
       </div>
     );
-  }, [visibleRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, downloadProgress, showArchived, searchTerm, animatingIds, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated, openAuditModal]);
+  }, [visibleRequests, selectedId, editingId, editingTitle, deleteConfirm, archiveConfirm, assigningId, users, downloadReadyMap, downloadingId, downloadProgress, showArchived, showIntake, onAssignRequest, searchTerm, animatingIds, onSelect, onArchive, onUnarchive, onDelete, onRequestUpdated, openAuditModal]);
 
   return (
     <div className="p-6 bg-pastel-blue min-h-full">
@@ -1657,9 +1693,9 @@ export function RequestsList({
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-2xl font-bold">
-          {showArchived ? 'Archived Requests' : 'Records Requests'}
+          {showIntake ? 'Intake Queue' : showArchived ? 'Archived Requests' : 'Records Requests'}
         </h2>
-        {!showArchived && (
+        {!showArchived && !showIntake && (
           <button
             onClick={onNewRequest}
             className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
@@ -1673,23 +1709,25 @@ export function RequestsList({
       <div className="mb-4 flex gap-3">
         <input
           type="text"
-          placeholder="Search requests..."
+          placeholder={showIntake ? "Search queue..." : "Search requests..."}
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
           className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <select
-          value={assigneeFilter}
-          onChange={(e) => onAssigneeFilterChange(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="">All Assignees</option>
-          {users.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name}
-            </option>
-          ))}
-        </select>
+        {!showArchived && !showIntake && (
+          <select
+            value={assigneeFilter}
+            onChange={(e) => onAssigneeFilterChange(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          >
+            <option value="">All Assignees</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Loaded indicator */}
@@ -1710,7 +1748,7 @@ export function RequestsList({
         <div className="text-center py-8 text-gray-500">Loading...</div>
       ) : visibleRequests.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
-          {searchTerm ? 'No matching requests found.' : 'No requests yet.'}
+          {searchTerm ? 'No matching requests found.' : showIntake ? 'No pending intake submissions.' : 'No requests yet.'}
         </div>
       ) : (
         <div ref={containerRef}>

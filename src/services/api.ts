@@ -100,6 +100,22 @@ class ApiService {
     return this.fetch(`/api/requests${query ? `?${query}` : ''}`);
   }
 
+  async listIntakeRequests(params?: { search?: string; limit?: number; offset?: number }): Promise<{ requests: Request[]; total: number; limit: number; offset: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.offset) searchParams.set('offset', params.offset.toString());
+    const query = searchParams.toString();
+    return this.fetch(`/api/requests/intake${query ? `?${query}` : ''}`);
+  }
+
+  async assignRequest(id: string, assignTo: string): Promise<{ request: Request }> {
+    return this.fetch(`/api/requests/${id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ assign_to: assignTo }),
+    });
+  }
+
   async getRequest(id: string): Promise<{ request: Request }> {
     return this.fetch(`/api/requests/${id}`);
   }

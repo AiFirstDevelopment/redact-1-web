@@ -2,7 +2,7 @@ import { useClerk } from '@clerk/clerk-react';
 import { useAuthStore } from '../stores/authStore';
 import { BadgeLogo } from './BadgeLogo';
 
-type Tab = 'requests' | 'archived' | 'users' | 'settings';
+type Tab = 'intake' | 'requests' | 'archived' | 'users' | 'settings';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,6 +17,7 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
   const isSupervisor = user?.role === 'supervisor';
 
   const tabs: { id: Tab; label: string; supervisorOnly?: boolean }[] = [
+    { id: 'intake', label: 'Intake', supervisorOnly: true },
     { id: 'requests', label: 'Requests' },
     { id: 'archived', label: 'Archived' },
     { id: 'users', label: 'Users', supervisorOnly: true },
