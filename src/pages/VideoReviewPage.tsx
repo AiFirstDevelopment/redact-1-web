@@ -32,6 +32,11 @@ export function VideoReviewPage() {
   const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
   const [showBulkRejectModal, setShowBulkRejectModal] = useState(false);
 
+  // Track thumbnails - map of track_id to base64 image
+  const [trackThumbnails, setTrackThumbnails] = useState<Map<string, string>>(new Map());
+  const [isCapturingThumbnails, setIsCapturingThumbnails] = useState(false);
+  const thumbnailVideoRef = useRef<HTMLVideoElement | null>(null);
+
 
   // Load file and detections
   useEffect(() => {
@@ -181,6 +186,83 @@ export function VideoReviewPage() {
     drawOverlays();
   }, [drawOverlays]);
 
+  // Capture thumbnails for each track at first appearance
+  useEffect(() => {
+    if (!videoUrl || detections.length === 0 || isCapturingThumbnails || trackThumbnails.size > 0) return;
+
+    const captureThumbnails = async () => {
+      setIsCapturingThumbnails(true);
+
+      // Create a hidden video element for thumbnail capture
+      const video = document.createElement('video');
+      video.crossOrigin = 'anonymous';
+      video.muted = true;
+      video.preload = 'auto';
+      thumbnailVideoRef.current = video;
+
+      try {
+        // Load video
+        await new Promise<void>((resolve, reject) => {
+          video.onloadedmetadata = () => resolve();
+          video.onerror = () => reject(new Error('Failed to load video for thumbnails'));
+          video.src = videoUrl;
+        });
+
+        // Group detections by track and find first appearance
+        const trackFirstAppearance = new Map<string, VideoDetection>();
+        for (const det of detections) {
+          if (!det.track_id) continue;
+          const existing = trackFirstAppearance.get(det.track_id);
+          if (!existing || det.start_time_ms < existing.start_time_ms) {
+            trackFirstAppearance.set(det.track_id, det);
+          }
+        }
+
+        // Capture thumbnail for each track
+        const thumbnails = new Map<string, string>();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+
+        for (const [trackId, det] of trackFirstAppearance) {
+          // Seek to first appearance
+          await new Promise<void>((resolve) => {
+            const seekHandler = () => {
+              video.removeEventListener('seeked', seekHandler);
+              resolve();
+            };
+            video.addEventListener('seeked', seekHandler);
+            video.currentTime = det.start_time_ms / 1000;
+          });
+
+          // Calculate crop area (with some padding)
+          const padding = 0.02;
+          const cropX = Math.max(0, det.bbox_x - padding) * video.videoWidth;
+          const cropY = Math.max(0, det.bbox_y - padding) * video.videoHeight;
+          const cropW = Math.min(1 - det.bbox_x + padding, det.bbox_width + padding * 2) * video.videoWidth;
+          const cropH = Math.min(1 - det.bbox_y + padding, det.bbox_height + padding * 2) * video.videoHeight;
+
+          // Draw cropped area to canvas (thumbnail size)
+          const thumbSize = 64;
+          canvas.width = thumbSize;
+          canvas.height = thumbSize;
+          ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, thumbSize, thumbSize);
+
+          thumbnails.set(trackId, canvas.toDataURL('image/jpeg', 0.7));
+        }
+
+        setTrackThumbnails(thumbnails);
+      } catch (err) {
+        console.error('Failed to capture thumbnails:', err);
+      } finally {
+        setIsCapturingThumbnails(false);
+        video.src = '';
+        thumbnailVideoRef.current = null;
+      }
+    };
+
+    captureThumbnails();
+  }, [videoUrl, detections, isCapturingThumbnails, trackThumbnails.size]);
+
   // Handle video time update
   const handleTimeUpdate = () => {
     if (videoRef.current) {
@@ -279,9 +361,26 @@ export function VideoReviewPage() {
 
   // Seek to detection time
   const seekToDetection = (det: VideoDetection) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = det.start_time_ms / 1000;
+    const video = videoRef.current;
+    if (video) {
+      const targetTime = det.start_time_ms / 1000;
+
+      // Pause, seek, then resume if was playing
+      const wasPlaying = !video.paused;
+      video.pause();
+      video.currentTime = targetTime;
+
+      // Wait for seek to complete
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked);
+        if (wasPlaying) {
+          video.play();
+        }
+      };
+      video.addEventListener('seeked', onSeeked);
+
       setSelectedDetection(det);
+      setSelectedTrack(det.track_id);
     }
   };
 
@@ -432,39 +531,69 @@ export function VideoReviewPage() {
           </div>
         </div>
 
-        {/* Detection timeline */}
-        <div className="h-20 border-t border-gray-700 p-2 overflow-x-auto">
-          <div className="relative h-full">
-            {tracks.map((track, i) => (
-              <div
-                key={track.track_id}
-                className="absolute h-4 flex"
-                style={{ top: i * 18 }}
-              >
-                <span className="text-xs text-gray-400 w-16">{track.track_id}</span>
-                {detections
-                  .filter(d => d.track_id === track.track_id)
-                  .map(det => {
-                    const duration = job?.duration_seconds ? job.duration_seconds * 1000 : 60000;
-                    const left = `${(det.start_time_ms / duration) * 100}%`;
-                    const width = `${((det.end_time_ms - det.start_time_ms) / duration) * 100}%`;
-                    return (
-                      <div
-                        key={det.id}
-                        className={`absolute h-3 rounded cursor-pointer ${
-                          det.status === 'approved' ? 'bg-green-500' :
-                          det.status === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'
-                        }`}
-                        style={{ left, width, minWidth: '4px' }}
-                        onClick={() => seekToDetection(det)}
-                        title={`${formatTime(det.start_time_ms)} - ${formatTime(det.end_time_ms)}`}
-                      />
-                    );
-                  })}
-              </div>
-            ))}
+        {/* Track list with thumbnails */}
+        {tracks.length > 0 && (
+          <div className="h-28 border-t border-gray-700 overflow-x-auto">
+            <div className="flex gap-2 p-2 min-w-max">
+              {(() => {
+                // Get first detection for each track, sorted by first appearance
+                const trackFirstDetections = tracks
+                  .map(track => {
+                    const trackDets = detections.filter(d => d.track_id === track.track_id);
+                    if (trackDets.length === 0) return null;
+                    trackDets.sort((a, b) => a.start_time_ms - b.start_time_ms);
+                    return { track, firstDet: trackDets[0], allDets: trackDets };
+                  })
+                  .filter((t): t is NonNullable<typeof t> => t !== null)
+                  .sort((a, b) => a.firstDet.start_time_ms - b.firstDet.start_time_ms);
+
+                return trackFirstDetections.map(({ track, firstDet, allDets }) => {
+                  const trackStatus = allDets.every(d => d.status === 'approved') ? 'approved' :
+                                      allDets.every(d => d.status === 'rejected') ? 'rejected' :
+                                      allDets.some(d => d.status === 'pending') ? 'pending' : 'mixed';
+                  const isSelected = selectedTrack === track.track_id;
+                  const thumbnail = trackThumbnails.get(track.track_id);
+
+                  return (
+                    <div
+                      key={track.track_id}
+                      onClick={() => {
+                        setSelectedTrack(isSelected ? null : track.track_id);
+                        seekToDetection(firstDet);
+                      }}
+                      className={`flex-shrink-0 w-20 cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                        isSelected ? 'border-blue-500 ring-2 ring-blue-500/50' :
+                        trackStatus === 'approved' ? 'border-green-500' :
+                        trackStatus === 'rejected' ? 'border-red-500' :
+                        trackStatus === 'pending' ? 'border-yellow-500' : 'border-gray-500'
+                      } hover:scale-105`}
+                      title={`${track.track_id}\nFirst: ${formatTime(firstDet.start_time_ms)}\nStatus: ${trackStatus}`}
+                    >
+                      {/* Thumbnail */}
+                      <div className="w-full h-16 bg-gray-800 flex items-center justify-center">
+                        {thumbnail ? (
+                          <img src={thumbnail} alt={track.track_id} className="w-full h-full object-cover" />
+                        ) : isCapturingThumbnails ? (
+                          <span className="text-xs text-gray-500 animate-pulse">...</span>
+                        ) : (
+                          <span className="text-2xl">👤</span>
+                        )}
+                      </div>
+                      {/* Info bar */}
+                      <div className={`px-1 py-0.5 text-center text-xs truncate ${
+                        trackStatus === 'approved' ? 'bg-green-600' :
+                        trackStatus === 'rejected' ? 'bg-red-600' :
+                        trackStatus === 'pending' ? 'bg-yellow-600' : 'bg-gray-600'
+                      }`}>
+                        {formatTime(firstDet.start_time_ms)}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Sidebar */}
@@ -520,20 +649,39 @@ export function VideoReviewPage() {
             {/* Track list */}
             <div className="space-y-2">
               <h3 className="font-semibold">Tracks</h3>
-              {tracks.map(track => (
-                <button
-                  key={track.track_id}
-                  onClick={() => setSelectedTrack(selectedTrack === track.track_id ? null : track.track_id)}
-                  className={`w-full p-2 rounded text-left ${
-                    selectedTrack === track.track_id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
-                  }`}
-                >
-                  <div className="flex justify-between">
-                    <span>{track.track_id}</span>
-                    <span className="text-gray-400">{track.count} segments</span>
-                  </div>
-                </button>
-              ))}
+              {tracks.map(track => {
+                // Find first detection for this track
+                const trackDets = detections.filter(d => d.track_id === track.track_id);
+                trackDets.sort((a, b) => a.start_time_ms - b.start_time_ms);
+                const firstDet = trackDets[0];
+
+                return (
+                  <button
+                    key={track.track_id}
+                    onClick={() => {
+                      const isDeselecting = selectedTrack === track.track_id;
+                      setSelectedTrack(isDeselecting ? null : track.track_id);
+                      // Seek to first appearance when selecting
+                      if (!isDeselecting && firstDet) {
+                        seekToDetection(firstDet);
+                      }
+                    }}
+                    className={`w-full p-2 rounded text-left ${
+                      selectedTrack === track.track_id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="flex justify-between">
+                      <span>{track.track_id}</span>
+                      <span className="text-gray-400">{track.count} segments</span>
+                    </div>
+                    {firstDet && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        First: {formatTime(firstDet.start_time_ms)}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
 
