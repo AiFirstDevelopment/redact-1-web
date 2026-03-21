@@ -10,7 +10,7 @@ const originalFetch = global.fetch;
 describe('ApiService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.setToken(null);
+    api.resetAuth();
     // Replace global fetch with mock
     global.fetch = mockFetch;
   });
@@ -22,16 +22,24 @@ describe('ApiService', () => {
   });
 
   describe('Token Management', () => {
-    it('should set and get token', () => {
-      expect(api.getToken()).toBeNull();
+    it('should set and get cached token', () => {
+      expect(api.getTokenSync()).toBeNull();
       api.setToken('test-token');
-      expect(api.getToken()).toBe('test-token');
+      expect(api.getTokenSync()).toBe('test-token');
     });
 
     it('should clear token when set to null', () => {
       api.setToken('test-token');
       api.setToken(null);
-      expect(api.getToken()).toBeNull();
+      expect(api.getTokenSync()).toBeNull();
+    });
+
+    it('should use token getter when available', async () => {
+      const mockGetter = vi.fn().mockResolvedValue('fresh-token');
+      api.setTokenGetter(mockGetter);
+      const token = await api.getToken();
+      expect(token).toBe('fresh-token');
+      expect(mockGetter).toHaveBeenCalled();
     });
   });
 

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 import type { User } from '../types';
 
 export function UsersPanel() {
+  const { user: currentUser } = useAuthStore();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -13,7 +15,6 @@ export function UsersPanel() {
   // Form state
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
-  const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState<'clerk' | 'supervisor'>('clerk');
 
   useEffect(() => {
@@ -35,7 +36,6 @@ export function UsersPanel() {
   const resetForm = () => {
     setFormName('');
     setFormEmail('');
-    setFormPassword('');
     setFormRole('clerk');
     setShowAddForm(false);
     setEditingUser(null);
@@ -49,7 +49,6 @@ export function UsersPanel() {
       await api.createUser({
         name: formName,
         email: formEmail,
-        password: formPassword,
         role: formRole,
       });
       resetForm();
@@ -92,7 +91,6 @@ export function UsersPanel() {
     setFormName(user.name);
     setFormEmail(user.email);
     setFormRole(user.role);
-    setFormPassword('');
     setShowAddForm(false);
   };
 
@@ -152,32 +150,23 @@ export function UsersPanel() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {editingUser ? 'New Password (leave blank to keep)' : 'Password'}
-                </label>
-                <input
-                  type="password"
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required={!editingUser}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Role
-                </label>
-                <select
-                  value={formRole}
-                  onChange={(e) => setFormRole(e.target.value as 'clerk' | 'supervisor')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="clerk">Clerk</option>
-                  <option value="supervisor">Supervisor</option>
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Role
+              </label>
+              <select
+                value={formRole}
+                onChange={(e) => setFormRole(e.target.value as 'clerk' | 'supervisor')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="clerk">Clerk</option>
+                <option value="supervisor">Supervisor</option>
+              </select>
+              {!editingUser && (
+                <p className="mt-2 text-sm text-gray-500">
+                  An invite email will be sent to the user to set up their account.
+                </p>
+              )}
             </div>
             <div className="flex gap-3">
               <button
@@ -217,6 +206,9 @@ export function UsersPanel() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Role
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
@@ -224,8 +216,7 @@ export function UsersPanel() {
             </thead>
             <tbody className="bg-card-white divide-y divide-gray-200">
               {users.map((user) => {
-                const supervisorCount = users.filter(u => u.role === 'supervisor').length;
-                const isLastSupervisor = user.role === 'supervisor' && supervisorCount <= 1;
+                const isCurrentUser = currentUser?.id === user.id;
 
                 return (
                   <tr key={user.id}>
@@ -244,6 +235,17 @@ export function UsersPanel() {
                         {user.role}
                       </span>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        user.auth_status === 'active' ? 'bg-green-100 text-green-800' :
+                        user.auth_status === 'signing_up' ? 'bg-blue-100 text-blue-800' :
+                        user.auth_status === 'invited' ? 'bg-yellow-100 text-yellow-800' :
+                        user.auth_status === 'suspended' ? 'bg-red-100 text-red-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {user.auth_status === 'signing_up' ? 'signing up' : user.auth_status}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -252,7 +254,7 @@ export function UsersPanel() {
                         >
                           Edit
                         </button>
-                        {!isLastSupervisor && (
+                        {!isCurrentUser && (
                           deleteConfirm === user.id ? (
                             <div className="flex items-center bg-red-500 rounded-full shadow-sm">
                               <button

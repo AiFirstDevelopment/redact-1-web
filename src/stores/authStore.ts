@@ -31,7 +31,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return;
       }
 
-      // Set token for API calls
+      // Set token getter for automatic refresh, and cache for sync contexts
+      api.setTokenGetter(getToken);
       api.setToken(token);
 
       // Sync user with backend

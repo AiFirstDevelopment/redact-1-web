@@ -3,14 +3,35 @@ import type { User, Request, RequestTimeline, EvidenceFile, Detection, ManualRed
 const API_BASE = import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev';
 
 class ApiService {
-  private token: string | null = null;
+  private tokenGetter: (() => Promise<string | null>) | null = null;
 
-  setToken(token: string | null) {
-    this.token = token;
+  setTokenGetter(getter: (() => Promise<string | null>) | null) {
+    this.tokenGetter = getter;
   }
 
-  getToken(): string | null {
-    return this.token;
+  // For backwards compatibility and sync contexts
+  private cachedToken: string | null = null;
+  setToken(token: string | null) {
+    this.cachedToken = token;
+  }
+
+  // Reset all auth state (for testing)
+  resetAuth() {
+    this.tokenGetter = null;
+    this.cachedToken = null;
+  }
+
+  async getToken(): Promise<string | null> {
+    // Prefer the getter (refreshes token automatically)
+    if (this.tokenGetter) {
+      return this.tokenGetter();
+    }
+    return this.cachedToken;
+  }
+
+  // Sync version for XHR contexts
+  getTokenSync(): string | null {
+    return this.cachedToken;
   }
 
   private async fetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -19,7 +40,7 @@ class ApiService {
       ...options.headers,
     };
 
-    const token = this.getToken();
+    const token = await this.getToken();
     if (token) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
@@ -113,7 +134,7 @@ class ApiService {
   ): { promise: Promise<{ file: EvidenceFile }>; abort: () => void } {
     const formData = new FormData();
     formData.append('file', file);
-    const token = this.getToken();
+    const token = this.getTokenSync();
     const xhr = new XMLHttpRequest();
 
     const promise = new Promise<{ file: EvidenceFile }>((resolve, reject) => {
@@ -152,7 +173,7 @@ class ApiService {
   }
 
   async getFileOriginal(fileId: string): Promise<Blob> {
-    const token = this.getToken();
+    const token = this.getTokenSync();
     const response = await fetch(`${API_BASE}/api/files/${fileId}/original`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -167,7 +188,7 @@ class ApiService {
   async detectFaces(fileId: string, pageImageBlob?: Blob, pageNumber?: number, dryRun = true): Promise<{ detections: Detection[]; count: number }> {
     if (pageImageBlob) {
       // For PDFs, send the rendered page image
-      const token = this.getToken();
+      const token = this.getTokenSync();
       const params = new URLSearchParams();
       if (pageNumber) params.set('page', String(pageNumber));
       if (dryRun) params.set('dry_run', 'true');
@@ -306,7 +327,7 @@ class ApiService {
     return this.fetch('/api/users');
   }
 
-  async createUser(data: { email: string; name: string; password: string; role: string }): Promise<{ user: User }> {
+  async createUser(data: { email: string; name: string; role: string }): Promise<{ user: User; invite: { sent: boolean; error?: string } }> {
     return this.fetch('/api/users', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -332,7 +353,7 @@ class ApiService {
   ): { promise: Promise<{ file: EvidenceFile }>; abort: () => void } {
     const formData = new FormData();
     formData.append('file', file);
-    const token = this.getToken();
+    const token = this.getTokenSync();
     const xhr = new XMLHttpRequest();
 
     const promise = new Promise<{ file: EvidenceFile }>((resolve, reject) => {

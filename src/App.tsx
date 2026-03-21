@@ -44,11 +44,7 @@ function App() {
       />
       <Route
         path="/sign-up"
-        element={
-          <SignedOut>
-            <SignUpPage />
-          </SignedOut>
-        }
+        element={<SignUpPage />}
       />
       <Route
         path="/console"

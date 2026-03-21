@@ -1,4 +1,4 @@
-export type AuthStatus = 'pending' | 'invited' | 'active' | 'suspended';
+export type AuthStatus = 'pending' | 'invited' | 'signing_up' | 'active' | 'suspended';
 
 export interface User {
   id: string;
