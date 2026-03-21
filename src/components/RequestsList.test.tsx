@@ -743,6 +743,396 @@ describe('RequestsList', () => {
   });
 
   // ============================================
+  // Video Redaction PDF Export Tests
+  // ============================================
+
+  describe('video redaction PDF export', () => {
+    it('enables download for video with approved detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 3,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for video with rejected detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 2,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 1000,
+                end_time_ms: 5000,
+                bbox_x: 0.2,
+                bbox_y: 0.3,
+                bbox_width: 0.15,
+                bbox_height: 0.2,
+                track_id: 'face-001',
+                status: 'rejected',
+                exemption_code: null,
+                comment: 'Not a face',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [{ track_id: 'face-001', count: 1 }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for video with mixed approved and rejected detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 4,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 3000,
+                bbox_x: 0.1,
+                bbox_y: 0.1,
+                bbox_width: 0.2,
+                bbox_height: 0.25,
+                track_id: 'face-001',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'Privacy exemption',
+                created_at: Date.now(),
+              },
+              {
+                id: 'vdet-2',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 5000,
+                end_time_ms: 8000,
+                bbox_x: 0.5,
+                bbox_y: 0.4,
+                bbox_width: 0.18,
+                bbox_height: 0.22,
+                track_id: 'face-002',
+                status: 'rejected',
+                exemption_code: null,
+                comment: 'Officer face - public record',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [
+              { track_id: 'face-001', count: 1 },
+              { track_id: 'face-002', count: 1 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('disables download for video with pending detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'uploaded',
+              detection_count: 5,
+              pending_count: 3,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/complete review to enable download/i);
+        expect(downloadBtn).toBeDisabled();
+      });
+    });
+
+    it('enables download for video with multiple tracks at different timestamps', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'interview.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 6,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 10000,
+                bbox_x: 0.1,
+                bbox_y: 0.1,
+                bbox_width: 0.2,
+                bbox_height: 0.25,
+                track_id: 'face-001',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'Witness face',
+                created_at: Date.now(),
+              },
+              {
+                id: 'vdet-2',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 15000,
+                end_time_ms: 25000,
+                bbox_x: 0.6,
+                bbox_y: 0.2,
+                bbox_width: 0.15,
+                bbox_height: 0.2,
+                track_id: 'face-002',
+                status: 'approved',
+                exemption_code: 'b7c',
+                comment: 'Confidential informant',
+                created_at: Date.now(),
+              },
+              {
+                id: 'vdet-3',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 30000,
+                end_time_ms: 45000,
+                bbox_x: 0.3,
+                bbox_y: 0.5,
+                bbox_width: 0.2,
+                bbox_height: 0.25,
+                track_id: 'face-003',
+                status: 'rejected',
+                exemption_code: null,
+                comment: 'Detective - public official',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [
+              { track_id: 'face-001', count: 1 },
+              { track_id: 'face-002', count: 1 },
+              { track_id: 'face-003', count: 1 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for video with long comments that wrap', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 1,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 5000,
+                bbox_x: 0.2,
+                bbox_y: 0.3,
+                bbox_width: 0.15,
+                bbox_height: 0.2,
+                track_id: 'face-001',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'This is a very long comment that should wrap to multiple lines in the PDF summary index',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [{ track_id: 'face-001', count: 1 }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download when video has detections in different frame positions', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 3,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              // Upper-left position
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 3000,
+                bbox_x: 0.1,
+                bbox_y: 0.1,
+                bbox_width: 0.15,
+                bbox_height: 0.2,
+                track_id: 'face-001',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'Upper left face',
+                created_at: Date.now(),
+              },
+              // Center position
+              {
+                id: 'vdet-2',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 5000,
+                end_time_ms: 8000,
+                bbox_x: 0.4,
+                bbox_y: 0.4,
+                bbox_width: 0.2,
+                bbox_height: 0.2,
+                track_id: 'face-002',
+                status: 'approved',
+                exemption_code: 'b7c',
+                comment: 'Center face',
+                created_at: Date.now(),
+              },
+              // Lower-right position
+              {
+                id: 'vdet-3',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 10000,
+                end_time_ms: 15000,
+                bbox_x: 0.7,
+                bbox_y: 0.7,
+                bbox_width: 0.2,
+                bbox_height: 0.25,
+                track_id: 'face-003',
+                status: 'rejected',
+                exemption_code: null,
+                comment: 'Lower right - public figure',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [
+              { track_id: 'face-001', count: 1 },
+              { track_id: 'face-002', count: 1 },
+              { track_id: 'face-003', count: 1 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+  });
+
+  // ============================================
   // PDF Export with Redaction Index Tests
   // ============================================
 

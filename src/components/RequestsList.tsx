@@ -148,19 +148,395 @@ export function RequestsList({
         const file = files[i];
         setDownloadProgress({ current: i + 1, total: totalFiles, file: file.filename });
 
-        // For videos, get the redacted version if available
+        // For videos, get the redacted version and create visual redaction log PDF
         if (file.file_type === 'video') {
           try {
-            const { url } = await api.getRedactedVideoStreamUrl(file.id);
-            const response = await fetch(url);
-            if (response.ok) {
-              const blob = await response.blob();
-              const baseName = file.filename.replace(/\.[^/.]+$/, '');
-              zip.folder('redacted')?.file(`${baseName}_redacted.mp4`, blob);
+            // Try to get redacted video
+            try {
+              const { url } = await api.getRedactedVideoStreamUrl(file.id);
+              const response = await fetch(url);
+              if (response.ok) {
+                const blob = await response.blob();
+                const baseName = file.filename.replace(/\.[^/.]+$/, '');
+                zip.folder('redacted')?.file(`${baseName}_redacted.mp4`, blob);
+              }
+            } catch {
+              console.log(`No redacted video for ${file.filename}`);
             }
-          } catch {
-            // No redacted video available, skip
-            console.log(`Skipping video ${file.filename} - no redacted version`);
+
+            // Create visual video redaction log PDF
+            const { detections: videoDetections } = await api.listVideoDetections(file.id);
+            if (videoDetections.length > 0) {
+              // Group detections by track
+              const trackMap = new Map<string, typeof videoDetections>();
+              for (const det of videoDetections) {
+                const trackId = det.track_id || 'unknown';
+                if (!trackMap.has(trackId)) {
+                  trackMap.set(trackId, []);
+                }
+                trackMap.get(trackId)!.push(det);
+              }
+
+              // Get first detection for each track (earliest appearance)
+              const trackFirstAppearances: Array<{
+                trackId: string;
+                detection: typeof videoDetections[0];
+                startTimeMs: number;
+                endTimeMs: number;
+              }> = [];
+
+              for (const [trackId, trackDetections] of trackMap) {
+                // Sort by time to find first appearance
+                trackDetections.sort((a, b) => (a.start_time_ms || 0) - (b.start_time_ms || 0));
+                const firstDet = trackDetections[0];
+                const lastDet = trackDetections[trackDetections.length - 1];
+                trackFirstAppearances.push({
+                  trackId,
+                  detection: firstDet,
+                  startTimeMs: firstDet.start_time_ms || 0,
+                  endTimeMs: lastDet.end_time_ms || lastDet.start_time_ms || 0,
+                });
+              }
+
+              // Sort tracks by first appearance time
+              trackFirstAppearances.sort((a, b) => a.startTimeMs - b.startTimeMs);
+
+              // Load original video - fetch as blob to avoid CORS/tainted canvas issues
+              const { url: videoStreamUrl } = await api.getVideoStreamUrl(file.id);
+              const videoResponse = await fetch(videoStreamUrl);
+              const videoBlob = await videoResponse.blob();
+              const videoBlobUrl = URL.createObjectURL(videoBlob);
+
+              const video = document.createElement('video');
+              video.muted = true;
+              video.preload = 'auto';
+
+              await new Promise<void>((resolve, reject) => {
+                video.onloadedmetadata = () => resolve();
+                video.onerror = () => reject(new Error('Failed to load video'));
+                video.src = videoBlobUrl;
+              });
+
+              // Create PDF
+              const videoPdf = await PDFDocument.create();
+              const font = await videoPdf.embedFont(StandardFonts.Helvetica);
+              const boldFont = await videoPdf.embedFont(StandardFonts.HelveticaBold);
+
+              // Track all redactions for the summary index
+              const redactionIndex: Array<{
+                footnote: number;
+                frame: number;
+                trackId: string;
+                position: string;
+                timeRange: string;
+                status: 'approved' | 'rejected';
+                exemptionCode: string;
+                exemptionLabel: string;
+                comment: string;
+              }> = [];
+              let footnoteCounter = 1;
+
+              // Format time as MM:SS.ms
+              const formatTime = (ms: number) => {
+                const totalSec = Math.floor(ms / 1000);
+                const min = Math.floor(totalSec / 60);
+                const sec = totalSec % 60;
+                const msRemainder = Math.floor((ms % 1000) / 10);
+                return `${min}:${sec.toString().padStart(2, '0')}.${msRemainder.toString().padStart(2, '0')}`;
+              };
+
+              // Helper to seek video and capture frame
+              const captureFrame = async (timeMs: number): Promise<HTMLCanvasElement> => {
+                return new Promise((resolve, reject) => {
+                  const seekHandler = () => {
+                    video.removeEventListener('seeked', seekHandler);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d')!;
+                    ctx.drawImage(video, 0, 0);
+                    resolve(canvas);
+                  };
+                  video.addEventListener('seeked', seekHandler);
+                  video.currentTime = timeMs / 1000;
+                  setTimeout(() => reject(new Error('Seek timeout')), 5000);
+                });
+              };
+
+              // Process each track (each becomes a "page" in the PDF)
+              for (let frameIdx = 0; frameIdx < trackFirstAppearances.length; frameIdx++) {
+                const { trackId, detection, startTimeMs, endTimeMs } = trackFirstAppearances[frameIdx];
+
+                // Capture frame at first appearance
+                const canvas = await captureFrame(startTimeMs);
+                const ctx = canvas.getContext('2d')!;
+
+                // Calculate position for index
+                const bboxX = detection.bbox_x ?? 0;
+                const bboxY = detection.bbox_y ?? 0;
+                const vPos = bboxY < 0.33 ? 'upper' : bboxY < 0.66 ? 'middle' : 'lower';
+                const hPos = bboxX < 0.33 ? 'left' : bboxX < 0.66 ? 'center' : 'right';
+                const position = vPos === 'middle' && hPos === 'center' ? 'center' : `${vPos}-${hPos}`;
+
+                const isRejected = detection.status === 'rejected';
+                const footnoteNum = footnoteCounter++;
+                const exemptionCode = (detection.exemption_code || (isRejected ? '' : 'b6')) as ExemptionCode;
+                const timeRange = `${formatTime(startTimeMs)} - ${formatTime(endTimeMs)}`;
+
+                // Add to summary index
+                redactionIndex.push({
+                  footnote: footnoteNum,
+                  frame: frameIdx + 1,
+                  trackId,
+                  position,
+                  timeRange,
+                  status: isRejected ? 'rejected' : 'approved',
+                  exemptionCode: exemptionCode || '',
+                  exemptionLabel: exemptionCode ? (EXEMPTION_LABELS[exemptionCode] || exemptionCode) : '',
+                  comment: detection.comment || '',
+                });
+
+                // Draw redaction rectangle on canvas
+                const x = (detection.bbox_x ?? 0) * canvas.width;
+                const y = (detection.bbox_y ?? 0) * canvas.height;
+                const w = (detection.bbox_width ?? 0) * canvas.width;
+                const h = (detection.bbox_height ?? 0) * canvas.height;
+
+                if (isRejected) {
+                  // Dashed red outline for rejected
+                  ctx.strokeStyle = '#CC0000';
+                  ctx.lineWidth = 3;
+                  ctx.setLineDash([8, 5]);
+                  ctx.strokeRect(x, y, w, h);
+                  ctx.setLineDash([]);
+
+                  // Red footnote marker outside top-right
+                  ctx.fillStyle = '#CC0000';
+                  ctx.font = 'bold 16px Arial';
+                  const markerText = `[${footnoteNum}]`;
+                  const textWidth = ctx.measureText(markerText).width;
+                  ctx.fillText(markerText, x + w - textWidth, y - 6);
+                } else {
+                  // Solid black rectangle for approved
+                  ctx.fillStyle = '#000000';
+                  ctx.fillRect(x, y, w, h);
+
+                  // White footnote marker on black
+                  ctx.fillStyle = '#FFFFFF';
+                  ctx.font = 'bold 16px Arial';
+                  const markerText = `[${footnoteNum}]`;
+                  const textWidth = ctx.measureText(markerText).width;
+                  ctx.fillText(markerText, x + w - textWidth - 4, y + 18);
+                }
+
+                // Convert canvas to PNG
+                const pngDataUrl = canvas.toDataURL('image/png');
+                const pngBytes = await fetch(pngDataUrl).then(r => r.arrayBuffer());
+                const pngImage = await videoPdf.embedPng(pngBytes);
+
+                // Calculate page dimensions with mini-index
+                const imgWidth = pngImage.width / 2;
+                const imgHeight = pngImage.height / 2;
+                const indexMargin = 20;
+                const lineHeight = 14;
+                const headerSpace = 25;
+                const indexHeight = headerSpace + lineHeight + indexMargin;
+                const totalPageHeight = imgHeight + indexHeight;
+
+                // Add page
+                const pdfPage = videoPdf.addPage([imgWidth, totalPageHeight]);
+
+                // Draw frame image
+                pdfPage.drawImage(pngImage, {
+                  x: 0,
+                  y: indexHeight,
+                  width: imgWidth,
+                  height: imgHeight,
+                });
+
+                // Mini-index below image
+                let indexY = indexHeight - indexMargin;
+
+                pdfPage.drawText(`Frame ${frameIdx + 1}: Track ${trackId} (${timeRange})`, {
+                  x: indexMargin,
+                  y: indexY,
+                  size: 10,
+                  font: boldFont,
+                  color: rgb(0.3, 0.3, 0.3),
+                });
+                indexY -= lineHeight + 2;
+
+                const statusText = isRejected ? 'REJECTED' : 'REDACTED';
+                const statusColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0.5, 0);
+                const textColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0, 0);
+
+                pdfPage.drawText(`[${footnoteNum}] ${position} - Face`, { x: indexMargin, y: indexY, size: 8, font: font, color: textColor });
+                pdfPage.drawText(statusText, { x: indexMargin + 100, y: indexY, size: 8, font: boldFont, color: statusColor });
+
+                if (!isRejected && exemptionCode) {
+                  pdfPage.drawText(`${exemptionCode}: ${detection.comment || ''}`, {
+                    x: indexMargin + 165,
+                    y: indexY,
+                    size: 8,
+                    font: font,
+                    color: rgb(0.3, 0.3, 0.3),
+                  });
+                } else if (isRejected) {
+                  pdfPage.drawText(detection.comment || 'Not redacted', {
+                    x: indexMargin + 165,
+                    y: indexY,
+                    size: 8,
+                    font: font,
+                    color: rgb(0.5, 0.5, 0.5),
+                  });
+                }
+              }
+
+              // Cleanup video blob URL
+              URL.revokeObjectURL(videoBlobUrl);
+
+              // Add summary index page(s)
+              if (redactionIndex.length > 0) {
+                const pageWidth = 612;
+                const pageHeight = 792;
+                const margin = 50;
+                const lineHeight = 16;
+                const headerHeight = 60;
+                let currentY = pageHeight - margin - headerHeight;
+                let indexPage = videoPdf.addPage([pageWidth, pageHeight]);
+
+                // Header
+                indexPage.drawText('VIDEO REDACTION SUMMARY', {
+                  x: margin,
+                  y: pageHeight - margin - 20,
+                  size: 18,
+                  font: boldFont,
+                });
+                indexPage.drawText(`File: ${file.filename}`, {
+                  x: margin,
+                  y: pageHeight - margin - 40,
+                  size: 10,
+                  font: font,
+                  color: rgb(0.3, 0.3, 0.3),
+                });
+                indexPage.drawText(`Generated: ${new Date().toLocaleString()}`, {
+                  x: margin,
+                  y: pageHeight - margin - 52,
+                  size: 10,
+                  font: font,
+                  color: rgb(0.3, 0.3, 0.3),
+                });
+
+                // Table header
+                currentY -= 10;
+                indexPage.drawText('#', { x: margin, y: currentY, size: 10, font: boldFont });
+                indexPage.drawText('Frame', { x: margin + 25, y: currentY, size: 10, font: boldFont });
+                indexPage.drawText('Track', { x: margin + 65, y: currentY, size: 10, font: boldFont });
+                indexPage.drawText('Time Range', { x: margin + 130, y: currentY, size: 10, font: boldFont });
+                indexPage.drawText('Decision', { x: margin + 230, y: currentY, size: 10, font: boldFont });
+                indexPage.drawText('Exemption', { x: margin + 300, y: currentY, size: 10, font: boldFont });
+                indexPage.drawText('Comment', { x: margin + 420, y: currentY, size: 10, font: boldFont });
+
+                currentY -= 5;
+                indexPage.drawLine({
+                  start: { x: margin, y: currentY },
+                  end: { x: pageWidth - margin, y: currentY },
+                  thickness: 0.5,
+                  color: rgb(0.5, 0.5, 0.5),
+                });
+                currentY -= lineHeight;
+
+                for (const entry of redactionIndex) {
+                  if (currentY < margin + 50) {
+                    indexPage = videoPdf.addPage([pageWidth, pageHeight]);
+                    currentY = pageHeight - margin - 20;
+                    indexPage.drawText('VIDEO REDACTION SUMMARY (continued)', {
+                      x: margin,
+                      y: currentY,
+                      size: 14,
+                      font: boldFont,
+                    });
+                    currentY -= 30;
+                  }
+
+                  const isRejected = entry.status === 'rejected';
+                  const textColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0, 0);
+                  const statusColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0.5, 0);
+                  const statusText = isRejected ? 'REJECTED' : 'REDACTED';
+
+                  indexPage.drawText(`[${entry.footnote}]`, { x: margin, y: currentY, size: 9, font: font, color: textColor });
+                  indexPage.drawText(`${entry.frame}`, { x: margin + 25, y: currentY, size: 9, font: font, color: textColor });
+                  indexPage.drawText(entry.trackId.substring(0, 10), { x: margin + 65, y: currentY, size: 8, font: font, color: textColor });
+                  indexPage.drawText(entry.timeRange, { x: margin + 130, y: currentY, size: 8, font: font, color: textColor });
+                  indexPage.drawText(statusText, { x: margin + 230, y: currentY, size: 8, font: boldFont, color: statusColor });
+
+                  if (!isRejected && entry.exemptionCode) {
+                    indexPage.drawText(entry.exemptionCode, { x: margin + 300, y: currentY, size: 9, font: boldFont });
+                    indexPage.drawText(entry.exemptionLabel.substring(0, 20), { x: margin + 330, y: currentY, size: 7, font: font, color: rgb(0.4, 0.4, 0.4) });
+                  } else if (isRejected) {
+                    indexPage.drawText('N/A', { x: margin + 300, y: currentY, size: 9, font: font, color: rgb(0.5, 0.5, 0.5) });
+                  }
+
+                  // Wrap comment text to fit available width
+                  const commentX = margin + 420;
+                  const commentMaxWidth = pageWidth - margin - commentX;
+                  const commentFontSize = 8;
+                  const comment = entry.comment || '';
+
+                  if (comment) {
+                    // Simple word wrapping
+                    const words = comment.split(' ');
+                    let lines: string[] = [];
+                    let currentLine = '';
+
+                    for (const word of words) {
+                      const testLine = currentLine ? `${currentLine} ${word}` : word;
+                      const testWidth = font.widthOfTextAtSize(testLine, commentFontSize);
+                      if (testWidth <= commentMaxWidth) {
+                        currentLine = testLine;
+                      } else {
+                        if (currentLine) lines.push(currentLine);
+                        currentLine = word;
+                      }
+                    }
+                    if (currentLine) lines.push(currentLine);
+
+                    // Draw each line
+                    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+                      indexPage.drawText(lines[lineIdx], { x: commentX, y: currentY, size: commentFontSize, font: font, color: textColor });
+                      if (lineIdx < lines.length - 1) currentY -= 10; // smaller spacing for wrapped lines
+                    }
+                  }
+
+                  currentY -= lineHeight;
+                }
+
+                // Final summary
+                currentY -= 20;
+                if (currentY < margin + 80) {
+                  indexPage = videoPdf.addPage([pageWidth, pageHeight]);
+                  currentY = pageHeight - margin;
+                }
+
+                const approvedCount = redactionIndex.filter(r => r.status === 'approved').length;
+                const rejectedCount = redactionIndex.filter(r => r.status === 'rejected').length;
+
+                indexPage.drawText('Summary:', { x: margin, y: currentY, size: 10, font: boldFont });
+                currentY -= lineHeight;
+                indexPage.drawText(`Total faces tracked: ${redactionIndex.length}`, { x: margin + 10, y: currentY, size: 9, font: font });
+                currentY -= lineHeight;
+                indexPage.drawText(`Redacted: ${approvedCount}`, { x: margin + 10, y: currentY, size: 9, font: font, color: rgb(0, 0.5, 0) });
+                currentY -= lineHeight;
+                indexPage.drawText(`Rejected: ${rejectedCount}`, { x: margin + 10, y: currentY, size: 9, font: font, color: rgb(0.8, 0, 0) });
+              }
+
+              // Save PDF
+              const pdfBytes = await videoPdf.save();
+              const baseName = file.filename.replace(/\.[^/.]+$/, '');
+              zip.folder('redacted')?.file(`${baseName}_redaction_log.pdf`, pdfBytes);
+            }
+          } catch (err) {
+            console.error(`Error processing video ${file.filename}:`, err);
           }
           continue;
         }
