@@ -134,46 +134,53 @@ class ApiService {
   ): { promise: Promise<{ file: EvidenceFile }>; abort: () => void } {
     const formData = new FormData();
     formData.append('file', file);
-    const token = this.getTokenSync();
     const xhr = new XMLHttpRequest();
 
-    const promise = new Promise<{ file: EvidenceFile }>((resolve, reject) => {
-      xhr.open('POST', `${API_BASE}/api/requests/${requestId}/files`);
-
+    const promise = (async () => {
+      // Get fresh token before upload
+      const token = await this.getToken();
       if (token) {
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        this.cachedToken = token;
       }
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          onProgress(progress);
-        }
-      };
+      return new Promise<{ file: EvidenceFile }>((resolve, reject) => {
+        xhr.open('POST', `${API_BASE}/api/requests/${requestId}/files`);
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
-        } else {
-          try {
-            const error = JSON.parse(xhr.responseText);
-            reject(new Error(error.error || 'Upload failed'));
-          } catch {
-            reject(new Error('Upload failed'));
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && onProgress) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            onProgress(progress);
           }
-        }
-      };
+        };
 
-      xhr.onerror = () => reject(new Error('Upload failed'));
-      xhr.onabort = () => reject(new Error('Upload cancelled'));
-      xhr.send(formData);
-    });
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            try {
+              const error = JSON.parse(xhr.responseText);
+              reject(new Error(error.error || 'Upload failed'));
+            } catch {
+              reject(new Error('Upload failed'));
+            }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.onabort = () => reject(new Error('Upload cancelled'));
+        xhr.send(formData);
+      });
+    })();
 
     return { promise, abort: () => xhr.abort() };
   }
 
   async getFileOriginal(fileId: string): Promise<Blob> {
-    const token = this.getTokenSync();
+    const token = await this.getToken();
     const response = await fetch(`${API_BASE}/api/files/${fileId}/original`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
@@ -188,7 +195,7 @@ class ApiService {
   async detectFaces(fileId: string, pageImageBlob?: Blob, pageNumber?: number, dryRun = true): Promise<{ detections: Detection[]; count: number }> {
     if (pageImageBlob) {
       // For PDFs, send the rendered page image
-      const token = this.getTokenSync();
+      const token = await this.getToken();
       const params = new URLSearchParams();
       if (pageNumber) params.set('page', String(pageNumber));
       if (dryRun) params.set('dry_run', 'true');
@@ -353,40 +360,47 @@ class ApiService {
   ): { promise: Promise<{ file: EvidenceFile }>; abort: () => void } {
     const formData = new FormData();
     formData.append('file', file);
-    const token = this.getTokenSync();
     const xhr = new XMLHttpRequest();
 
-    const promise = new Promise<{ file: EvidenceFile }>((resolve, reject) => {
-      xhr.open('POST', `${API_BASE}/api/requests/${requestId}/videos`);
-
+    const promise = (async () => {
+      // Get fresh token before upload
+      const token = await this.getToken();
       if (token) {
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        this.cachedToken = token;
       }
 
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && onProgress) {
-          const progress = Math.round((event.loaded / event.total) * 100);
-          onProgress(progress);
-        }
-      };
+      return new Promise<{ file: EvidenceFile }>((resolve, reject) => {
+        xhr.open('POST', `${API_BASE}/api/requests/${requestId}/videos`);
 
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText));
-        } else {
-          try {
-            const error = JSON.parse(xhr.responseText);
-            reject(new Error(error.error || 'Upload failed'));
-          } catch {
-            reject(new Error('Upload failed'));
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && onProgress) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            onProgress(progress);
           }
-        }
-      };
+        };
 
-      xhr.onerror = () => reject(new Error('Upload failed'));
-      xhr.onabort = () => reject(new Error('Upload cancelled'));
-      xhr.send(formData);
-    });
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            try {
+              const error = JSON.parse(xhr.responseText);
+              reject(new Error(error.error || 'Upload failed'));
+            } catch {
+              reject(new Error('Upload failed'));
+            }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.onabort = () => reject(new Error('Upload cancelled'));
+        xhr.send(formData);
+      });
+    })();
 
     return { promise, abort: () => xhr.abort() };
   }

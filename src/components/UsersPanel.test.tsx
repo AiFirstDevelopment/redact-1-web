@@ -322,6 +322,71 @@ describe('UsersPanel', () => {
     });
   });
 
+  describe('Last Supervisor Protection', () => {
+    it('should hide clerk option when editing the last supervisor', async () => {
+      const onlyOneSupervisor = [
+        { id: 'supervisor-1', email: 'super@test.com', name: 'Only Supervisor', role: 'supervisor' as const, auth_status: 'active' as const },
+      ];
+      (api.listUsers as any).mockResolvedValue({ users: onlyOneSupervisor });
+      (useAuthStore as any).mockReturnValue({ user: onlyOneSupervisor[0] });
+
+      render(<UsersPanel />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Only Supervisor')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Edit'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit User')).toBeInTheDocument();
+      });
+
+      // Role dropdown should not contain "Clerk" option
+      const roleSelect = screen.getByRole('combobox');
+      expect(roleSelect).toBeInTheDocument();
+
+      // Should show the warning message
+      expect(screen.getByText(/Cannot demote the last supervisor/i)).toBeInTheDocument();
+
+      // The dropdown should only have Supervisor option
+      const options = roleSelect.querySelectorAll('option');
+      expect(options).toHaveLength(1);
+      expect(options[0].textContent).toBe('Supervisor');
+    });
+
+    it('should show clerk option when multiple supervisors exist', async () => {
+      const multipleSupervisors = [
+        { id: 'supervisor-1', email: 'super1@test.com', name: 'Supervisor One', role: 'supervisor' as const, auth_status: 'active' as const },
+        { id: 'supervisor-2', email: 'super2@test.com', name: 'Supervisor Two', role: 'supervisor' as const, auth_status: 'active' as const },
+      ];
+      (api.listUsers as any).mockResolvedValue({ users: multipleSupervisors });
+      (useAuthStore as any).mockReturnValue({ user: multipleSupervisors[0] });
+
+      render(<UsersPanel />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Supervisor One')).toBeInTheDocument();
+      });
+
+      // Edit the first supervisor
+      const editButtons = screen.getAllByText('Edit');
+      fireEvent.click(editButtons[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText('Edit User')).toBeInTheDocument();
+      });
+
+      // Should not show the warning message
+      expect(screen.queryByText(/Cannot demote the last supervisor/i)).not.toBeInTheDocument();
+
+      // The dropdown should have both options
+      const roleSelect = screen.getByRole('combobox');
+      const options = roleSelect.querySelectorAll('option');
+      expect(options).toHaveLength(2);
+    });
+  });
+
   describe('Error Handling', () => {
     it('should show error when fetching users fails', async () => {
       (api.listUsers as any).mockRejectedValue(new Error('Network error'));

@@ -532,4 +532,51 @@ describe('ApiService', () => {
       await expect(api.adminCreateAgency({ code: 'TEST', name: 'Test' })).rejects.toThrow('Unknown error');
     });
   });
+
+  describe('Token Refresh', () => {
+    it('should use async token getter for getFileOriginal', async () => {
+      const mockGetter = vi.fn().mockResolvedValue('fresh-token');
+      api.setTokenGetter(mockGetter);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        blob: () => Promise.resolve(new Blob(['test'])),
+      });
+
+      await api.getFileOriginal('file-123');
+
+      expect(mockGetter).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/files/file-123/original'),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer fresh-token',
+          }),
+        })
+      );
+    });
+
+    it('should use async token getter for detectFaces', async () => {
+      const mockGetter = vi.fn().mockResolvedValue('fresh-token');
+      api.setTokenGetter(mockGetter);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ detections: [], count: 0 }),
+      });
+
+      const blob = new Blob(['test'], { type: 'image/png' });
+      await api.detectFaces('file-123', blob, 1);
+
+      expect(mockGetter).toHaveBeenCalled();
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/files/file-123/detect'),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer fresh-token',
+          }),
+        })
+      );
+    });
+  });
 });

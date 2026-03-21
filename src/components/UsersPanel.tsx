@@ -154,14 +154,27 @@ export function UsersPanel() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Role
               </label>
-              <select
-                value={formRole}
-                onChange={(e) => setFormRole(e.target.value as 'clerk' | 'supervisor')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="clerk">Clerk</option>
-                <option value="supervisor">Supervisor</option>
-              </select>
+              {(() => {
+                const supervisorCount = users.filter(u => u.role === 'supervisor').length;
+                const isLastSupervisor = editingUser?.role === 'supervisor' && supervisorCount <= 1;
+                return (
+                  <>
+                    <select
+                      value={formRole}
+                      onChange={(e) => setFormRole(e.target.value as 'clerk' | 'supervisor')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {!isLastSupervisor && <option value="clerk">Clerk</option>}
+                      <option value="supervisor">Supervisor</option>
+                    </select>
+                    {isLastSupervisor && (
+                      <p className="mt-2 text-sm text-amber-600">
+                        Cannot demote the last supervisor. Promote another user first.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               {!editingUser && (
                 <p className="mt-2 text-sm text-gray-500">
                   An invite email will be sent to the user to set up their account.

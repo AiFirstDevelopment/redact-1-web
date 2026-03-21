@@ -43,8 +43,9 @@ export function VideoReviewPage() {
         setError(null);
 
         // Get file info
+        const token = await api.getToken();
         const fileResponse = await fetch(`${import.meta.env.VITE_API_URL || 'https://redact-1-worker.joelstevick.workers.dev'}/api/files/${fileId}`, {
-          headers: { Authorization: `Bearer ${api.getToken()}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!fileResponse.ok) throw new Error('Failed to load file');
         const { file: fileData } = await fileResponse.json();
