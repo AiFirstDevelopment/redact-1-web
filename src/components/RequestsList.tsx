@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { FixedSizeList as List, ListOnScrollProps } from 'react-window';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import type { Request, User, Detection, AuditLog } from '../types';
+import { EXEMPTION_LABELS, ExemptionCode } from '../types';
 import { api } from '../services/api';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -163,21 +165,40 @@ export function RequestsList({
           continue;
         }
 
-        // Get detections for this file
+        // Get detections for this file (both approved and rejected for documentation)
         const { detections } = await api.listDetections(file.id);
         const approvedDetections = detections.filter((d: Detection) => d.status === 'approved');
+        const rejectedDetections = detections.filter((d: Detection) => d.status === 'rejected');
 
         // Get original file
         const blob = await api.getFileOriginal(file.id);
 
         if (file.file_type === 'pdf') {
-          // Render PDF with redactions
+          // Render PDF with redactions and footnotes
           const arrayBuffer = await blob.arrayBuffer();
-          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          const redactedFolder = zip.folder('redacted');
+          const sourcePdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-          for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            const page = await pdf.getPage(pageNum);
+          // Create new PDF document
+          const outputPdf = await PDFDocument.create();
+          const font = await outputPdf.embedFont(StandardFonts.Helvetica);
+          const boldFont = await outputPdf.embedFont(StandardFonts.HelveticaBold);
+
+          // Track all redactions for the index
+          const redactionIndex: Array<{
+            footnote: number;
+            page: number;
+            position: string;
+            detectionType: string;
+            status: 'approved' | 'rejected';
+            exemptionCode: string;
+            exemptionLabel: string;
+            comment: string;
+          }> = [];
+          let footnoteCounter = 1;
+
+          // Process each page
+          for (let pageNum = 1; pageNum <= sourcePdf.numPages; pageNum++) {
+            const page = await sourcePdf.getPage(pageNum);
             const viewport = page.getViewport({ scale: 2 });
             const canvas = document.createElement('canvas');
             const context = canvas.getContext('2d')!;
@@ -191,25 +212,268 @@ export function RequestsList({
               canvas: canvas,
             } as Parameters<typeof page.render>[0]).promise;
 
-            // Draw black rectangles over approved detections for this page
-            context.fillStyle = '#000000';
-            for (const detection of approvedDetections) {
-              if (detection.page_number === pageNum || detection.page_number === null) {
-                const x = (detection.bbox_x ?? 0) * canvas.width;
-                const y = (detection.bbox_y ?? 0) * canvas.height;
-                const w = (detection.bbox_width ?? 0) * canvas.width;
-                const h = (detection.bbox_height ?? 0) * canvas.height;
-                context.fillRect(x, y, w, h);
-              }
+            // Get detections for this page
+            const pageApproved = approvedDetections.filter(
+              d => d.page_number === pageNum || d.page_number === null
+            );
+            const pageRejected = rejectedDetections.filter(
+              d => d.page_number === pageNum || d.page_number === null
+            );
+
+            // Helper to add detection to index
+            const addToIndex = (detection: Detection, status: 'approved' | 'rejected') => {
+              const footnoteNum = footnoteCounter++;
+              const bboxX = detection.bbox_x ?? 0;
+              const bboxY = detection.bbox_y ?? 0;
+              const vPos = bboxY < 0.33 ? 'upper' : bboxY < 0.66 ? 'middle' : 'lower';
+              const hPos = bboxX < 0.33 ? 'left' : bboxX < 0.66 ? 'center' : 'right';
+              const position = vPos === 'middle' && hPos === 'center' ? 'center' : `${vPos}-${hPos}`;
+              const exemptionCode = (detection.exemption_code || (status === 'approved' ? 'b6' : '')) as ExemptionCode;
+
+              redactionIndex.push({
+                footnote: footnoteNum,
+                page: pageNum,
+                position,
+                detectionType: detection.detection_type === 'face' ? 'Face' :
+                               detection.detection_type === 'manual' ? 'Manual' : detection.detection_type,
+                status,
+                exemptionCode: exemptionCode || '',
+                exemptionLabel: exemptionCode ? (EXEMPTION_LABELS[exemptionCode] || exemptionCode) : '',
+                comment: detection.comment || '',
+              });
+              return footnoteNum;
+            };
+
+            // Draw APPROVED detections (solid black rectangles)
+            for (const detection of pageApproved) {
+              const x = (detection.bbox_x ?? 0) * canvas.width;
+              const y = (detection.bbox_y ?? 0) * canvas.height;
+              const w = (detection.bbox_width ?? 0) * canvas.width;
+              const h = (detection.bbox_height ?? 0) * canvas.height;
+
+              // Draw solid black redaction rectangle
+              context.fillStyle = '#000000';
+              context.fillRect(x, y, w, h);
+
+              // Draw footnote marker (white text on black)
+              const footnoteNum = addToIndex(detection, 'approved');
+              context.fillStyle = '#FFFFFF';
+              context.font = 'bold 14px Arial';
+              const markerText = `[${footnoteNum}]`;
+              const textWidth = context.measureText(markerText).width;
+              context.fillText(markerText, x + w - textWidth - 2, y + 14);
             }
 
-            // Convert to blob and add to zip
-            const pageBlob = await new Promise<Blob>((resolve) => {
-              canvas.toBlob((b) => resolve(b!), 'image/png');
+            // Draw REJECTED detections (dashed outline, not filled)
+            for (const detection of pageRejected) {
+              const x = (detection.bbox_x ?? 0) * canvas.width;
+              const y = (detection.bbox_y ?? 0) * canvas.height;
+              const w = (detection.bbox_width ?? 0) * canvas.width;
+              const h = (detection.bbox_height ?? 0) * canvas.height;
+
+              // Draw dashed rectangle outline (red)
+              context.strokeStyle = '#CC0000';
+              context.lineWidth = 2;
+              context.setLineDash([6, 4]);
+              context.strokeRect(x, y, w, h);
+              context.setLineDash([]); // Reset
+
+              // Draw footnote marker (red text, outside top-right)
+              const footnoteNum = addToIndex(detection, 'rejected');
+              context.fillStyle = '#CC0000';
+              context.font = 'bold 12px Arial';
+              const markerText = `[${footnoteNum}]`;
+              const textWidth = context.measureText(markerText).width;
+              context.fillText(markerText, x + w - textWidth, y - 4);
+            }
+
+            // Convert canvas to PNG and embed in PDF
+            const pngDataUrl = canvas.toDataURL('image/png');
+            const pngBytes = await fetch(pngDataUrl).then(r => r.arrayBuffer());
+            const pngImage = await outputPdf.embedPng(pngBytes);
+
+            // Get redactions for this page (for mini-index)
+            const pageRedactions = redactionIndex.filter(r => r.page === pageNum);
+
+            // Calculate page dimensions - add space for mini-index if needed
+            const imgWidth = pngImage.width / 2;
+            const imgHeight = pngImage.height / 2;
+            const indexMargin = 20;
+            const lineHeight = 14;
+            const headerSpace = pageRedactions.length > 0 ? 25 : 0;
+            const indexHeight = pageRedactions.length > 0
+              ? headerSpace + (pageRedactions.length * lineHeight) + indexMargin
+              : 0;
+            const totalPageHeight = imgHeight + indexHeight;
+
+            // Add page with room for mini-index below image
+            const pdfPage = outputPdf.addPage([imgWidth, totalPageHeight]);
+
+            // Draw image at top (PDF coordinates: y=0 is bottom)
+            pdfPage.drawImage(pngImage, {
+              x: 0,
+              y: indexHeight, // Push image up to make room for index below
+              width: imgWidth,
+              height: imgHeight,
             });
-            const baseName = file.filename.replace(/\.[^/.]+$/, '');
-            redactedFolder?.file(`${baseName}_page${pageNum}.png`, pageBlob);
+
+            // Draw mini-index below the image
+            if (pageRedactions.length > 0) {
+              let indexY = indexHeight - indexMargin;
+
+              // Mini-index header
+              pdfPage.drawText(`Page ${pageNum} Redactions:`, {
+                x: indexMargin,
+                y: indexY,
+                size: 10,
+                font: boldFont,
+                color: rgb(0.3, 0.3, 0.3),
+              });
+              indexY -= lineHeight + 2;
+
+              // Draw each redaction entry
+              for (const entry of pageRedactions) {
+                const isRejected = entry.status === 'rejected';
+                const textColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0, 0);
+                const statusText = isRejected ? 'REJECTED' : 'REDACTED';
+                const statusColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0.5, 0);
+
+                // Compact format: [#] Location - Type - DECISION - Exemption: Comment
+                let entryText = `[${entry.footnote}] ${entry.position} - ${entry.detectionType}`;
+                pdfPage.drawText(entryText, { x: indexMargin, y: indexY, size: 8, font: font, color: textColor });
+
+                pdfPage.drawText(statusText, { x: indexMargin + 130, y: indexY, size: 8, font: boldFont, color: statusColor });
+
+                if (!isRejected && entry.exemptionCode) {
+                  pdfPage.drawText(`${entry.exemptionCode}: ${entry.comment || ''}`, {
+                    x: indexMargin + 195,
+                    y: indexY,
+                    size: 8,
+                    font: font,
+                    color: rgb(0.3, 0.3, 0.3),
+                  });
+                } else if (isRejected) {
+                  pdfPage.drawText(entry.comment || 'Not redacted', {
+                    x: indexMargin + 195,
+                    y: indexY,
+                    size: 8,
+                    font: font,
+                    color: rgb(0.5, 0.5, 0.5),
+                  });
+                }
+
+                indexY -= lineHeight;
+              }
+            }
           }
+
+          // Add Redaction Index page(s) if there are redactions
+          if (redactionIndex.length > 0) {
+            const pageWidth = 612; // Letter size
+            const pageHeight = 792;
+            const margin = 50;
+            const lineHeight = 16;
+            const headerHeight = 60;
+            let currentY = pageHeight - margin - headerHeight;
+            let indexPage = outputPdf.addPage([pageWidth, pageHeight]);
+
+            // Draw header
+            indexPage.drawText('REDACTION SUMMARY', {
+              x: margin,
+              y: pageHeight - margin - 20,
+              size: 18,
+              font: boldFont,
+              color: rgb(0, 0, 0),
+            });
+            indexPage.drawText(`Document: ${file.filename}`, {
+              x: margin,
+              y: pageHeight - margin - 40,
+              size: 10,
+              font: font,
+              color: rgb(0.3, 0.3, 0.3),
+            });
+            indexPage.drawText(`Generated: ${new Date().toLocaleString()}`, {
+              x: margin,
+              y: pageHeight - margin - 52,
+              size: 10,
+              font: font,
+              color: rgb(0.3, 0.3, 0.3),
+            });
+
+            // Draw table header
+            currentY -= 10;
+            indexPage.drawText('#', { x: margin, y: currentY, size: 10, font: boldFont });
+            indexPage.drawText('Page', { x: margin + 30, y: currentY, size: 10, font: boldFont });
+            indexPage.drawText('Location', { x: margin + 65, y: currentY, size: 10, font: boldFont });
+            indexPage.drawText('Type', { x: margin + 130, y: currentY, size: 10, font: boldFont });
+            indexPage.drawText('Decision', { x: margin + 175, y: currentY, size: 10, font: boldFont });
+            indexPage.drawText('Exemption', { x: margin + 240, y: currentY, size: 10, font: boldFont });
+            indexPage.drawText('Justification', { x: margin + 380, y: currentY, size: 10, font: boldFont });
+
+            currentY -= 5;
+            indexPage.drawLine({
+              start: { x: margin, y: currentY },
+              end: { x: pageWidth - margin, y: currentY },
+              thickness: 0.5,
+              color: rgb(0.5, 0.5, 0.5),
+            });
+            currentY -= lineHeight;
+
+            // Draw each redaction entry
+            for (const entry of redactionIndex) {
+              // Check if we need a new page
+              if (currentY < margin + lineHeight) {
+                indexPage = outputPdf.addPage([pageWidth, pageHeight]);
+                currentY = pageHeight - margin;
+                // Redraw header on continuation page
+                indexPage.drawText('REDACTION SUMMARY (continued)', {
+                  x: margin,
+                  y: currentY,
+                  size: 14,
+                  font: boldFont,
+                });
+                currentY -= 30;
+              }
+
+              const isRejected = entry.status === 'rejected';
+              const textColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0, 0);
+
+              indexPage.drawText(`[${entry.footnote}]`, { x: margin, y: currentY, size: 9, font: font, color: textColor });
+              indexPage.drawText(`${entry.page}`, { x: margin + 30, y: currentY, size: 9, font: font, color: textColor });
+              indexPage.drawText(entry.position, { x: margin + 65, y: currentY, size: 9, font: font, color: textColor });
+              indexPage.drawText(entry.detectionType, { x: margin + 130, y: currentY, size: 9, font: font, color: textColor });
+
+              // Decision column with color coding
+              const decisionText = isRejected ? 'REJECTED' : 'REDACTED';
+              const decisionColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0.5, 0);
+              indexPage.drawText(decisionText, { x: margin + 175, y: currentY, size: 8, font: boldFont, color: decisionColor });
+
+              // Exemption code (only for approved)
+              if (!isRejected && entry.exemptionCode) {
+                indexPage.drawText(entry.exemptionCode, { x: margin + 240, y: currentY, size: 9, font: boldFont });
+                // Truncate exemption label if too long
+                const labelText = entry.exemptionLabel.length > 18
+                  ? entry.exemptionLabel.substring(0, 16) + '...'
+                  : entry.exemptionLabel;
+                indexPage.drawText(labelText, { x: margin + 275, y: currentY, size: 7, font: font, color: rgb(0.3, 0.3, 0.3) });
+              } else if (isRejected) {
+                indexPage.drawText('N/A', { x: margin + 240, y: currentY, size: 9, font: font, color: rgb(0.5, 0.5, 0.5) });
+              }
+
+              // Truncate comment if too long
+              const commentText = entry.comment.length > 25
+                ? entry.comment.substring(0, 23) + '...'
+                : entry.comment;
+              indexPage.drawText(commentText || (isRejected ? 'Not redacted' : ''), { x: margin + 380, y: currentY, size: 9, font: font, color: textColor });
+
+              currentY -= lineHeight;
+            }
+          }
+
+          // Save PDF to zip
+          const pdfBytes = await outputPdf.save();
+          const baseName = file.filename.replace(/\.[^/.]+$/, '');
+          zip.folder('redacted')?.file(`${baseName}_redacted.pdf`, pdfBytes);
         } else {
           // For images, render with redactions
           const img = new Image();

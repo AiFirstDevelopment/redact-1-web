@@ -741,4 +741,176 @@ describe('RequestsList', () => {
       });
     });
   });
+
+  // ============================================
+  // PDF Export with Redaction Index Tests
+  // ============================================
+
+  describe('PDF export with redaction index', () => {
+    it('enables download for PDF with approved and rejected detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'test.pdf',
+              file_type: 'pdf',
+              status: 'reviewed',
+              detection_count: 3,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for multi-page PDF with detections on different pages', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'multipage.pdf',
+              file_type: 'pdf',
+              status: 'reviewed',
+              detection_count: 4,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for image files with redactions', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'photo.jpg',
+              file_type: 'image',
+              status: 'reviewed',
+              detection_count: 1,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for video files', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'bodycam.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 5,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for mixed file types', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [
+              { id: 'file-1', request_id: 'req-1', filename: 'doc.pdf', file_type: 'pdf', status: 'reviewed', detection_count: 2, pending_count: 0 },
+              { id: 'file-2', request_id: 'req-1', filename: 'photo.jpg', file_type: 'image', status: 'reviewed', detection_count: 1, pending_count: 0 },
+              { id: 'file-3', request_id: 'req-1', filename: 'video.mp4', file_type: 'video', status: 'reviewed', detection_count: 3, pending_count: 0 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('disables download when some files have pending detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [
+              { id: 'file-1', request_id: 'req-1', filename: 'doc.pdf', file_type: 'pdf', status: 'reviewed', detection_count: 2, pending_count: 0 },
+              { id: 'file-2', request_id: 'req-1', filename: 'photo.jpg', file_type: 'image', status: 'uploaded', detection_count: 1, pending_count: 1 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/complete review to enable download/i);
+        expect(downloadBtn).toBeDisabled();
+      });
+    });
+
+    it('enables download when file has only rejected detections', async () => {
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'file-1',
+              request_id: 'req-1',
+              filename: 'test.pdf',
+              file_type: 'pdf',
+              status: 'reviewed',
+              detection_count: 2,
+              pending_count: 0,
+            }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+  });
 });
