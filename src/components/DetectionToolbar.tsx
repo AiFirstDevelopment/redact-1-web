@@ -40,24 +40,26 @@ export function DetectionToolbar({
       </select>
       <input
         type="text"
-        placeholder="Add note..."
+        placeholder="Justification (required)"
         value={comment}
         onChange={(e) => onCommentChange(e.target.value)}
-        className="bg-gray-700 text-white text-sm rounded px-2 py-1.5 w-28 border-0 outline-none placeholder-gray-400"
+        className={`bg-gray-700 text-white text-sm rounded px-2 py-1.5 w-36 outline-none placeholder-gray-400 ${!comment.trim() ? 'border border-yellow-500' : 'border border-transparent'}`}
         data-testid="comment-input"
       />
       <button
         onClick={onApprove}
-        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-        title="Approve"
+        disabled={!comment.trim()}
+        className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        title={comment.trim() ? 'Approve' : 'Enter justification to approve'}
         data-testid="approve-button"
       >
         ✓
       </button>
       <button
         onClick={onReject}
-        className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors"
-        title="Reject"
+        disabled={!comment.trim()}
+        className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        title={comment.trim() ? 'Reject' : 'Enter justification to reject'}
         data-testid="reject-button"
       >
         ✗

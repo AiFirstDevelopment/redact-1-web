@@ -127,15 +127,9 @@ export function MainPage() {
     }
   }, [requests, selectedRequest]);
 
-  const handleRequestCreated = (requestId: string) => {
+  const handleRequestCreated = () => {
     fetchRequests();
-    const newRequest = requests.find(r => r.id === requestId);
-    if (newRequest) {
-      setSelectedRequest(newRequest);
-      setRightPanel('detail');
-    } else {
-      handleClosePanel();
-    }
+    handleClosePanel();
   };
 
   const handleArchive = async (id: string) => {

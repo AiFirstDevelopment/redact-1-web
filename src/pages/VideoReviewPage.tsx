@@ -29,6 +29,8 @@ export function VideoReviewPage() {
   const [bulkExemption, setBulkExemption] = useState<ExemptionCode>('b7c');
   const [bulkComment, setBulkComment] = useState('');
   const [isStartingDetection, setIsStartingDetection] = useState(false);
+  const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
+  const [showBulkRejectModal, setShowBulkRejectModal] = useState(false);
 
 
   // Load file and detections
@@ -490,30 +492,14 @@ export function VideoReviewPage() {
             <div className="space-y-2">
               {pendingCount > 0 && (
                 <>
-                  <select
-                    value={bulkExemption}
-                    onChange={e => setBulkExemption(e.target.value as ExemptionCode)}
-                    className="w-full p-2 bg-gray-700 rounded"
-                  >
-                    {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
-                      <option key={code} value={code}>{label}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={bulkComment}
-                    onChange={e => setBulkComment(e.target.value)}
-                    placeholder="Comment (optional)"
-                    className="w-full p-2 bg-gray-700 rounded"
-                  />
                   <button
-                    onClick={() => handleBulkUpdate('approved')}
+                    onClick={() => setShowBulkApproveModal(true)}
                     className="w-full py-2 bg-green-600 rounded hover:bg-green-500"
                   >
                     {selectedTrack ? `Approve Track ${selectedTrack}` : 'Approve All Pending'}
                   </button>
                   <button
-                    onClick={() => handleBulkUpdate('rejected')}
+                    onClick={() => setShowBulkRejectModal(true)}
                     className="w-full py-2 bg-red-600 rounded hover:bg-red-500"
                   >
                     {selectedTrack ? `Reject Track ${selectedTrack}` : 'Reject All Pending'}
@@ -583,6 +569,100 @@ export function VideoReviewPage() {
           </div>
         </div>
       </div>
+
+      {/* Bulk Approve Modal */}
+      {showBulkApproveModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+          <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
+            <h3 className="text-white font-semibold text-lg mb-4">
+              {selectedTrack ? `Approve Track ${selectedTrack}` : 'Approve All Pending'}
+            </h3>
+            <p className="text-gray-400 mb-4">
+              This will approve {selectedTrack ? `all detections in track ${selectedTrack}` : `${pendingCount} pending detection(s)`}.
+            </p>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-gray-400 text-sm mb-1">Exemption Code</label>
+                <select
+                  value={bulkExemption}
+                  onChange={(e) => setBulkExemption(e.target.value as ExemptionCode)}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
+                >
+                  {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
+                    <option key={code} value={code}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-400 text-sm mb-1">Justification (required)</label>
+                <input
+                  type="text"
+                  value={bulkComment}
+                  onChange={(e) => setBulkComment(e.target.value)}
+                  placeholder="Enter justification for audit trail"
+                  className={`w-full bg-gray-700 text-white rounded px-3 py-2 text-sm ${!bulkComment.trim() ? 'border border-yellow-500' : 'border border-transparent'}`}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowBulkApproveModal(false); setBulkComment(''); }}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-gray-600 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { handleBulkUpdate('approved'); setShowBulkApproveModal(false); setBulkComment(''); }}
+                disabled={!bulkComment.trim()}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Reject Modal */}
+      {showBulkRejectModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
+          <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
+            <h3 className="text-white font-semibold text-lg mb-4">
+              {selectedTrack ? `Reject Track ${selectedTrack}` : 'Reject All Pending'}
+            </h3>
+            <p className="text-gray-400 mb-4">
+              This will reject {selectedTrack ? `all detections in track ${selectedTrack}` : `${pendingCount} pending detection(s)`}.
+            </p>
+            <div className="mb-4">
+              <label className="block text-gray-400 text-sm mb-1">Justification (required)</label>
+              <input
+                type="text"
+                value={bulkComment}
+                onChange={(e) => setBulkComment(e.target.value)}
+                placeholder="Enter justification for audit trail"
+                className={`w-full bg-gray-700 text-white rounded px-3 py-2 text-sm ${!bulkComment.trim() ? 'border border-yellow-500' : 'border border-transparent'}`}
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowBulkRejectModal(false); setBulkComment(''); }}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-gray-600 text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { handleBulkUpdate('rejected'); setShowBulkRejectModal(false); setBulkComment(''); }}
+                disabled={!bulkComment.trim()}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

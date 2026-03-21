@@ -85,13 +85,14 @@ export function approveAllPendingOnPage<T extends { id: string; status?: string 
 }
 
 // Reject all pending detections on a page
-export function rejectAllPendingOnPage<T extends { id: string; status?: string | null; page_number?: number | null }>(
+export function rejectAllPendingOnPage<T extends { id: string; status?: string | null; page_number?: number | null; comment?: string | null }>(
   detections: T[],
-  currentPage: number
+  currentPage: number,
+  comment?: string | null
 ): T[] {
   return detections.map(d => {
     if (d.status === 'pending' && (d.page_number == null || d.page_number === currentPage)) {
-      return { ...d, status: 'rejected' };
+      return { ...d, status: 'rejected', comment: comment ?? null };
     }
     return d;
   });

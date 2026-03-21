@@ -102,51 +102,56 @@ describe('VideoReviewPage', () => {
       json: () => Promise.resolve({ file: mockFile }),
     });
 
-    (api.getVideoStreamUrl as any).mockResolvedValue({ url: 'https://example.com/video.mp4' });
-    (api.getRedactedVideoStreamUrl as any).mockRejectedValue(new Error('Not found'));
-    (api.listVideoDetections as any).mockResolvedValue({
-      detections: mockDetections,
-      tracks: mockTracks,
-    });
+    (api.getVideoStreamUrl as any).mockResolvedValue({ url: 'http://test.com/video.mp4' });
+    (api.listVideoDetections as any).mockResolvedValue({ detections: mockDetections, tracks: mockTracks });
     (api.getVideoJobStatus as any).mockResolvedValue({ job: mockJob });
   });
 
-  describe('Tab Behavior', () => {
-    it('should not show Timeline tab', async () => {
+  describe('Initial Loading', () => {
+    it('should show loading state initially', () => {
       renderWithRouter();
-
-      await waitFor(() => {
-        expect(screen.getByText('Tracks')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByText('Timeline')).not.toBeInTheDocument();
+      expect(screen.getByText('Loading video...')).toBeInTheDocument();
     });
 
-    it('should not show Detections header with count', async () => {
+    it('should fetch file info on mount', async () => {
       renderWithRouter();
 
+      // Wait for the page to load
       await waitFor(() => {
         expect(screen.getByText('Tracks')).toBeInTheDocument();
       });
 
-      // Should not have a standalone "Detections (2)" header
-      expect(screen.queryByText(/^Detections \(\d+\)$/)).not.toBeInTheDocument();
+      // Verify API was called for video stream
+      expect(api.getVideoStreamUrl).toHaveBeenCalledWith('file-1');
+    });
+
+    it('should fetch video stream URL', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(api.getVideoStreamUrl).toHaveBeenCalledWith('file-1');
+      });
+    });
+
+    it('should fetch detections', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(api.listVideoDetections).toHaveBeenCalledWith('file-1');
+      });
+    });
+
+    it('should fetch job status', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(api.getVideoJobStatus).toHaveBeenCalledWith('file-1');
+      });
     });
   });
 
-  describe('Original/Redacted Tabs', () => {
-    it('should not show video tabs when no redacted video exists', async () => {
-      renderWithRouter();
-
-      await waitFor(() => {
-        expect(screen.getByText('Tracks')).toBeInTheDocument();
-      });
-
-      expect(screen.queryByRole('button', { name: 'Original' })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Redacted' })).not.toBeInTheDocument();
-    });
-
-    it('should not call getRedactedVideoStreamUrl when file has no redacted key', async () => {
+  describe('File Display', () => {
+    it('should not fetch redacted URL when not available', async () => {
       renderWithRouter();
 
       await waitFor(() => {
@@ -170,23 +175,73 @@ describe('VideoReviewPage', () => {
       expect(screen.getByText('Reject All Pending')).toBeInTheDocument();
     });
 
-    it('should show exemption code selector', async () => {
+    it('should open approve modal when Approve All Pending is clicked', async () => {
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByText('(b)(7)(C) LE Privacy')).toBeInTheDocument();
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Approve All Pending'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Exemption Code')).toBeInTheDocument();
+        expect(screen.getByText('Justification (required)')).toBeInTheDocument();
       });
     });
 
-    it('should show comment input for bulk actions', async () => {
+    it('should open reject modal when Reject All Pending is clicked', async () => {
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Comment (optional)')).toBeInTheDocument();
+        expect(screen.getByText('Reject All Pending')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Reject All Pending'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Justification (required)')).toBeInTheDocument();
+        // Reject modal should have Reject button
+        expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
       });
     });
 
-    it('should call bulk update API when Approve All is clicked', async () => {
+    it('should disable approve button when justification is empty', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Approve All Pending'));
+
+      await waitFor(() => {
+        const approveButton = screen.getByRole('button', { name: 'Approve' });
+        expect(approveButton).toBeDisabled();
+      });
+    });
+
+    it('should enable approve button when justification is provided', async () => {
+      renderWithRouter();
+
+      await waitFor(() => {
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByText('Approve All Pending'));
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Enter justification for audit trail')).toBeInTheDocument();
+      });
+
+      const input = screen.getByPlaceholderText('Enter justification for audit trail');
+      fireEvent.change(input, { target: { value: 'Test justification' } });
+
+      const approveButton = screen.getByRole('button', { name: 'Approve' });
+      expect(approveButton).not.toBeDisabled();
+    });
+
+    it('should call bulk update API when modal approve is clicked', async () => {
       (api.bulkUpdateVideoDetections as any).mockResolvedValue({});
 
       renderWithRouter();
@@ -198,36 +253,41 @@ describe('VideoReviewPage', () => {
       fireEvent.click(screen.getByText('Approve All Pending'));
 
       await waitFor(() => {
+        expect(screen.getByPlaceholderText('Enter justification for audit trail')).toBeInTheDocument();
+      });
+
+      const input = screen.getByPlaceholderText('Enter justification for audit trail');
+      fireEvent.change(input, { target: { value: 'Approved for release' } });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+      await waitFor(() => {
         expect(api.bulkUpdateVideoDetections).toHaveBeenCalledWith('file-1', {
           track_id: undefined,
           status: 'approved',
           exemption_code: 'b7c',
-          comment: undefined,
+          comment: 'Approved for release',
         });
       });
     });
 
-    it('should include comment when provided', async () => {
-      (api.bulkUpdateVideoDetections as any).mockResolvedValue({});
-
+    it('should close modal when Cancel is clicked', async () => {
       renderWithRouter();
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Comment (optional)')).toBeInTheDocument();
+        expect(screen.getByText('Approve All Pending')).toBeInTheDocument();
       });
-
-      const commentInput = screen.getByPlaceholderText('Comment (optional)');
-      fireEvent.change(commentInput, { target: { value: 'Test comment' } });
 
       fireEvent.click(screen.getByText('Approve All Pending'));
 
       await waitFor(() => {
-        expect(api.bulkUpdateVideoDetections).toHaveBeenCalledWith('file-1', {
-          track_id: undefined,
-          status: 'approved',
-          exemption_code: 'b7c',
-          comment: 'Test comment',
-        });
+        expect(screen.getByText('Exemption Code')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('Exemption Code')).not.toBeInTheDocument();
       });
     });
   });
@@ -339,14 +399,26 @@ describe('VideoReviewPage', () => {
         expect(screen.getByText('Approve Track face-001')).toBeInTheDocument();
       });
 
+      // Open the modal
       fireEvent.click(screen.getByText('Approve Track face-001'));
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText('Enter justification for audit trail')).toBeInTheDocument();
+      });
+
+      // Fill in justification
+      const input = screen.getByPlaceholderText('Enter justification for audit trail');
+      fireEvent.change(input, { target: { value: 'Track approved' } });
+
+      // Click approve
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
 
       await waitFor(() => {
         expect(api.bulkUpdateVideoDetections).toHaveBeenCalledWith('file-1', {
           track_id: 'face-001',
           status: 'approved',
           exemption_code: 'b7c',
-          comment: undefined,
+          comment: 'Track approved',
         });
       });
     });

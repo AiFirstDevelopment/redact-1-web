@@ -735,23 +735,28 @@ export function RequestsList({
                         </div>
                         <p className="text-gray-600">
                           {log.action.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('_')} {log.entity_type}
-                          {log.details && (
-                            <span className="text-gray-400 ml-1">
-                              - {(() => {
-                                try {
-                                  const details = JSON.parse(log.details);
-                                  const parts = [];
-                                  if (details.status) parts.push(`status: ${details.status}`);
-                                  if (details.count !== undefined) parts.push(`${details.count} detections`);
-                                  if (details.comment) parts.push(`note: ${details.comment}`);
-                                  else if (details.status) parts.push(`note: ""`);
-                                  return parts.join(', ') || '';
-                                } catch {
-                                  return log.details;
-                                }
-                              })()}
-                            </span>
-                          )}
+                          {(() => {
+                            try {
+                              const details = log.details ? JSON.parse(log.details) : {};
+                              const parts = [];
+                              if (details.filename) parts.push(`"${details.filename}"`);
+                              if (details.old_filename && details.new_filename) {
+                                parts.push(`"${details.old_filename}" → "${details.new_filename}"`);
+                              }
+                              if (details.status) parts.push(`status: ${details.status}`);
+                              if (details.exemption_code) parts.push(`code: ${details.exemption_code}`);
+                              if (details.count !== undefined) parts.push(`${details.count} detections`);
+                              if (details.comment) parts.push(`note: "${details.comment}"`);
+                              else if (details.status) parts.push(`note: ""`);
+                              return parts.length > 0 ? (
+                                <span className="text-gray-400 ml-1">- {parts.join(', ')}</span>
+                              ) : null;
+                            } catch {
+                              return log.details ? (
+                                <span className="text-gray-400 ml-1">- {log.details}</span>
+                              ) : null;
+                            }
+                          })()}
                         </p>
                       </div>
                     );

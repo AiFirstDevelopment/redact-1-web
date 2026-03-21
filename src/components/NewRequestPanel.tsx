@@ -6,7 +6,7 @@ import type { User } from '../types';
 
 interface NewRequestPanelProps {
   onClose: () => void;
-  onCreated: (requestId: string) => void;
+  onCreated: () => void;
 }
 
 export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
@@ -42,13 +42,13 @@ export function NewRequestPanel({ onClose, onCreated }: NewRequestPanelProps) {
     setError(null);
 
     try {
-      const request = await createRequest({
+      await createRequest({
         title: title.trim() || undefined,
         request_date: new Date(requestDate).getTime(),
         notes: notes.trim() || undefined,
         assign_to: assignTo || undefined,
       });
-      onCreated(request.id);
+      onCreated();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create request');
     }

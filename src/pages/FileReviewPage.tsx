@@ -6,7 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useDetectionStore } from '../stores/detectionStore';
 import { api } from '../services/api';
-import { ExemptionCode, DEFAULT_EXEMPTION_CODES, Detection } from '../types';
+import { ExemptionCode, DEFAULT_EXEMPTION_CODES, EXEMPTION_LABELS, Detection } from '../types';
 import {
   updateDetectionPosition,
   updateDetectionSize,
@@ -509,6 +509,8 @@ export function FileReviewPage() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showApproveAllConfirm, setShowApproveAllConfirm] = useState(false);
   const [showRejectAllConfirm, setShowRejectAllConfirm] = useState(false);
+  const [bulkExemptionCode, setBulkExemptionCode] = useState<ExemptionCode>('b6');
+  const [bulkJustification, setBulkJustification] = useState('');
 
   // Get pending detections for current page
   const getPendingOnCurrentPage = () => {
@@ -522,17 +524,18 @@ export function FileReviewPage() {
 
     // Approve local detections
     if (localPending.length > 0) {
-      setLocalDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode, toolbarComment || null));
+      setLocalDetections(prev => approveAllPendingOnPage(prev, currentPage, bulkExemptionCode, bulkJustification || null));
       setHasUnsavedChanges(true);
     }
 
     // Approve server detections locally (saved when Save is clicked)
     if (serverPending.length > 0) {
-      setModifiedServerDetections(prev => approveAllPendingOnPage(prev, currentPage, toolbarExemptionCode, toolbarComment || null));
+      setModifiedServerDetections(prev => approveAllPendingOnPage(prev, currentPage, bulkExemptionCode, bulkJustification || null));
       setHasModifications(true);
     }
 
     setShowApproveAllConfirm(false);
+    setBulkJustification('');
   };
 
   const handleRejectAllOnPage = () => {
@@ -546,11 +549,12 @@ export function FileReviewPage() {
 
     // Reject server detections locally (saved when Save is clicked)
     if (serverPending.length > 0) {
-      setModifiedServerDetections(prev => rejectAllPendingOnPage(prev, currentPage));
+      setModifiedServerDetections(prev => rejectAllPendingOnPage(prev, currentPage, bulkJustification || null));
       setHasModifications(true);
     }
 
     setShowRejectAllConfirm(false);
+    setBulkJustification('');
   };
 
   const handleCancel = () => {
@@ -1116,25 +1120,46 @@ export function FileReviewPage() {
       {showApproveAllConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
           <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
-            <h3 className="text-white font-semibold text-lg mb-2">Approve Remaining on Page {currentPage}?</h3>
+            <h3 className="text-white font-semibold text-lg mb-4">Approve Remaining on Page {currentPage}</h3>
             <p className="text-gray-400 mb-4">
-              This will approve the {getPendingOnCurrentPage().serverPending.length + getPendingOnCurrentPage().localPending.length} remaining pending detection(s) on this page with exemption code "{toolbarExemptionCode}".
+              This will approve the {getPendingOnCurrentPage().serverPending.length + getPendingOnCurrentPage().localPending.length} remaining pending detection(s) on this page.
             </p>
-            {toolbarComment && (
-              <p className="text-gray-400 mb-4 text-sm">
-                Comment: <span className="text-gray-300">"{toolbarComment}"</span>
-              </p>
-            )}
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-gray-400 text-sm mb-1">Exemption Code</label>
+                <select
+                  value={bulkExemptionCode}
+                  onChange={(e) => setBulkExemptionCode(e.target.value as ExemptionCode)}
+                  className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
+                >
+                  {Object.entries(EXEMPTION_LABELS).map(([code, label]) => (
+                    <option key={code} value={code}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-gray-400 text-sm mb-1">Justification (required)</label>
+                <input
+                  type="text"
+                  value={bulkJustification}
+                  onChange={(e) => setBulkJustification(e.target.value)}
+                  placeholder="Enter justification for audit trail"
+                  className={`w-full bg-gray-700 text-white rounded px-3 py-2 text-sm ${!bulkJustification.trim() ? 'border border-yellow-500' : 'border border-transparent'}`}
+                  autoFocus
+                />
+              </div>
+            </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setShowApproveAllConfirm(false)}
+                onClick={() => { setShowApproveAllConfirm(false); setBulkJustification(''); }}
                 className="flex-1 py-2.5 rounded-lg font-semibold bg-gray-600 text-white"
               >
                 Cancel
               </button>
               <button
                 onClick={handleApproveAllOnPage}
-                className="flex-1 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700"
+                disabled={!bulkJustification.trim()}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Approve Remaining
               </button>
@@ -1147,20 +1172,32 @@ export function FileReviewPage() {
       {showRejectAllConfirm && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100]">
           <div className="bg-[#252530] rounded-xl p-6 max-w-md mx-4 shadow-2xl">
-            <h3 className="text-white font-semibold text-lg mb-2">Reject Remaining on Page {currentPage}?</h3>
-            <p className="text-gray-400 mb-6">
+            <h3 className="text-white font-semibold text-lg mb-4">Reject Remaining on Page {currentPage}</h3>
+            <p className="text-gray-400 mb-4">
               This will reject and remove the {getPendingOnCurrentPage().serverPending.length + getPendingOnCurrentPage().localPending.length} remaining pending detection(s) on this page.
             </p>
+            <div className="mb-4">
+              <label className="block text-gray-400 text-sm mb-1">Justification (required)</label>
+              <input
+                type="text"
+                value={bulkJustification}
+                onChange={(e) => setBulkJustification(e.target.value)}
+                placeholder="Enter justification for audit trail"
+                className={`w-full bg-gray-700 text-white rounded px-3 py-2 text-sm ${!bulkJustification.trim() ? 'border border-yellow-500' : 'border border-transparent'}`}
+                autoFocus
+              />
+            </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setShowRejectAllConfirm(false)}
+                onClick={() => { setShowRejectAllConfirm(false); setBulkJustification(''); }}
                 className="flex-1 py-2.5 rounded-lg font-semibold bg-gray-600 text-white"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRejectAllOnPage}
-                className="flex-1 py-2.5 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700"
+                disabled={!bulkJustification.trim()}
+                className="flex-1 py-2.5 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Reject Remaining
               </button>

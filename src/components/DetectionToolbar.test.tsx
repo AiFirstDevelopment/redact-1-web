@@ -59,22 +59,36 @@ describe('DetectionToolbar', () => {
     expect(onCommentChange).toHaveBeenCalled();
   });
 
-  it('calls onApprove when approve button is clicked', async () => {
+  it('disables approve/reject buttons when comment is empty', () => {
+    render(<DetectionToolbar {...defaultProps} comment="" />);
+
+    expect(screen.getByTestId('approve-button')).toBeDisabled();
+    expect(screen.getByTestId('reject-button')).toBeDisabled();
+  });
+
+  it('enables approve/reject buttons when comment is provided', () => {
+    render(<DetectionToolbar {...defaultProps} comment="Justification text" />);
+
+    expect(screen.getByTestId('approve-button')).not.toBeDisabled();
+    expect(screen.getByTestId('reject-button')).not.toBeDisabled();
+  });
+
+  it('calls onApprove when approve button is clicked with comment', async () => {
     const onApprove = vi.fn();
     const user = userEvent.setup();
 
-    render(<DetectionToolbar {...defaultProps} onApprove={onApprove} />);
+    render(<DetectionToolbar {...defaultProps} comment="Required justification" onApprove={onApprove} />);
 
     await user.click(screen.getByTestId('approve-button'));
 
     expect(onApprove).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onReject when reject button is clicked', async () => {
+  it('calls onReject when reject button is clicked with comment', async () => {
     const onReject = vi.fn();
     const user = userEvent.setup();
 
-    render(<DetectionToolbar {...defaultProps} onReject={onReject} />);
+    render(<DetectionToolbar {...defaultProps} comment="Required justification" onReject={onReject} />);
 
     await user.click(screen.getByTestId('reject-button'));
 
@@ -91,17 +105,38 @@ describe('DetectionToolbar', () => {
     expect(options.length).toBeGreaterThan(0);
   });
 
-  it('has correct button titles for accessibility', () => {
-    render(<DetectionToolbar {...defaultProps} />);
+  it('shows helpful title when comment is empty', () => {
+    render(<DetectionToolbar {...defaultProps} comment="" />);
+
+    expect(screen.getByTitle('Enter justification to approve')).toBeInTheDocument();
+    expect(screen.getByTitle('Enter justification to reject')).toBeInTheDocument();
+  });
+
+  it('shows action title when comment is provided', () => {
+    render(<DetectionToolbar {...defaultProps} comment="Justification" />);
 
     expect(screen.getByTitle('Approve')).toBeInTheDocument();
     expect(screen.getByTitle('Reject')).toBeInTheDocument();
   });
 
-  it('shows placeholder text in comment input', () => {
+  it('shows placeholder text for justification input', () => {
     render(<DetectionToolbar {...defaultProps} />);
 
-    const input = screen.getByPlaceholderText('Add note...');
+    const input = screen.getByPlaceholderText('Justification (required)');
     expect(input).toBeInTheDocument();
+  });
+
+  it('shows yellow border when comment is empty', () => {
+    render(<DetectionToolbar {...defaultProps} comment="" />);
+
+    const input = screen.getByTestId('comment-input');
+    expect(input.className).toContain('border-yellow-500');
+  });
+
+  it('hides yellow border when comment is provided', () => {
+    render(<DetectionToolbar {...defaultProps} comment="Some text" />);
+
+    const input = screen.getByTestId('comment-input');
+    expect(input.className).not.toContain('border-yellow-500');
   });
 });
