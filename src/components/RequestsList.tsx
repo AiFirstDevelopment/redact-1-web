@@ -1305,18 +1305,6 @@ export function RequestsList({
                 <span className={`px-2 py-0.5 text-xs rounded-full ${getStatusBadge(request.status)}`}>
                   {request.status.replace('_', ' ')}
                 </span>
-                {(request.file_count ?? 0) > 0 && (
-                  <span
-                    className={`px-2 py-0.5 text-xs rounded-full ${
-                      (request.files_completed ?? 0) === (request.file_count ?? 0)
-                        ? 'bg-green-700 text-white'
-                        : 'bg-gray-200 text-gray-700'
-                    }`}
-                    title={`${request.files_completed ?? 0} of ${request.file_count} file${request.file_count !== 1 ? 's' : ''} reviewed`}
-                  >
-                    {request.files_completed ?? 0}/{request.file_count} file{request.file_count !== 1 ? 's' : ''}
-                  </span>
-                )}
                 {(() => {
                   const dueStatus = getDueDateStatus(request);
                   return dueStatus ? (
@@ -1462,7 +1450,7 @@ export function RequestsList({
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  <span className="text-xs text-blue-700">{downloadProgress.current}/{downloadProgress.total}</span>
+                  <span className="text-xs text-blue-700">Preparing...</span>
                 </div>
               ) : (
                 <button
