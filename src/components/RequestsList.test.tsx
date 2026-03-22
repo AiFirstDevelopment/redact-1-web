@@ -1130,6 +1130,211 @@ describe('RequestsList', () => {
         expect(downloadBtn).not.toBeDisabled();
       });
     });
+
+    it('enables download for video with tracks starting at same time (page grouping)', async () => {
+      // Test case: multiple tracks starting at 0ms should be grouped on same page
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'store_footage.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 3,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              // Two faces appearing at the same time (should be grouped)
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 5530,
+                bbox_x: 0.1,
+                bbox_y: 0.2,
+                bbox_width: 0.15,
+                bbox_height: 0.2,
+                track_id: 'face-000',
+                status: 'approved',
+                exemption_code: 'b7c',
+                comment: 'Employee',
+                created_at: Date.now(),
+              },
+              {
+                id: 'vdet-2',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 6030,
+                bbox_x: 0.5,
+                bbox_y: 0.3,
+                bbox_width: 0.12,
+                bbox_height: 0.18,
+                track_id: 'face-001',
+                status: 'approved',
+                exemption_code: 'b7c',
+                comment: 'Customer',
+                created_at: Date.now(),
+              },
+              // Third face appearing within 1 second (should also be grouped)
+              {
+                id: 'vdet-3',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 500,
+                end_time_ms: 530,
+                bbox_x: 0.7,
+                bbox_y: 0.4,
+                bbox_width: 0.1,
+                bbox_height: 0.15,
+                track_id: 'face-002',
+                status: 'approved',
+                exemption_code: 'b7c',
+                comment: 'Bystander',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [
+              { track_id: 'face-000', count: 1 },
+              { track_id: 'face-001', count: 1 },
+              { track_id: 'face-002', count: 1 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for video with tracks at different times (separate pages)', async () => {
+      // Test case: tracks starting more than 1 second apart should be on separate pages
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'interview.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 2,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 0,
+                end_time_ms: 5000,
+                bbox_x: 0.2,
+                bbox_y: 0.2,
+                bbox_width: 0.15,
+                bbox_height: 0.2,
+                track_id: 'face-000',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'First person',
+                created_at: Date.now(),
+              },
+              // This face appears more than 1 second later (separate page)
+              {
+                id: 'vdet-2',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 10000,
+                end_time_ms: 15000,
+                bbox_x: 0.6,
+                bbox_y: 0.3,
+                bbox_width: 0.12,
+                bbox_height: 0.18,
+                track_id: 'face-001',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'Second person entering later',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [
+              { track_id: 'face-000', count: 1 },
+              { track_id: 'face-001', count: 1 },
+            ],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
+
+    it('enables download for video with short-duration track (midpoint capture)', async () => {
+      // Test case: track less than 1 second should capture at midpoint
+      server.use(
+        http.get(`${API_BASE}/api/requests/:requestId/files`, () => {
+          return HttpResponse.json({
+            files: [{
+              id: 'video-1',
+              request_id: 'req-1',
+              filename: 'quick_pass.mp4',
+              file_type: 'video',
+              status: 'reviewed',
+              detection_count: 1,
+              pending_count: 0,
+            }],
+          });
+        }),
+        http.get(`${API_BASE}/api/files/:fileId/video/detections`, () => {
+          return HttpResponse.json({
+            detections: [
+              {
+                id: 'vdet-1',
+                file_id: 'video-1',
+                detection_type: 'face',
+                start_time_ms: 5000,
+                end_time_ms: 5500, // Only 500ms duration
+                bbox_x: 0.3,
+                bbox_y: 0.4,
+                bbox_width: 0.1,
+                bbox_height: 0.15,
+                track_id: 'face-000',
+                status: 'approved',
+                exemption_code: 'b6',
+                comment: 'Brief appearance',
+                created_at: Date.now(),
+              },
+            ],
+            tracks: [{ track_id: 'face-000', count: 1 }],
+          });
+        })
+      );
+
+      renderRequestsList();
+
+      await waitFor(() => {
+        const downloadBtn = screen.getByTitle(/download redacted files/i);
+        expect(downloadBtn).not.toBeDisabled();
+      });
+    });
   });
 
   // ============================================

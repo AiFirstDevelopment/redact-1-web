@@ -278,30 +278,50 @@ export function RequestsList({
                 });
               };
 
-              // Process each track (each becomes a "page" in the PDF)
-              for (let frameIdx = 0; frameIdx < trackFirstAppearances.length; frameIdx++) {
-                const { trackId, detection, startTimeMs, endTimeMs } = trackFirstAppearances[frameIdx];
+              // Helper to pixelate a region
+              const pixelateRegion = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, x: number, y: number, w: number, h: number) => {
+                const regionX = Math.max(0, Math.floor(x));
+                const regionY = Math.max(0, Math.floor(y));
+                const regionW = Math.min(Math.ceil(w), canvas.width - regionX);
+                const regionH = Math.min(Math.ceil(h), canvas.height - regionY);
 
-                // Capture frame at first appearance
-                const canvas = await captureFrame(startTimeMs);
-                const ctx = canvas.getContext('2d')!;
+                if (regionW > 0 && regionH > 0) {
+                  const pixelSize = Math.max(8, Math.floor(Math.min(regionW, regionH) / 8));
+                  const smallW = Math.max(1, Math.floor(regionW / pixelSize));
+                  const smallH = Math.max(1, Math.floor(regionH / pixelSize));
 
-                // Calculate position for index
+                  const smallCanvas = document.createElement('canvas');
+                  smallCanvas.width = smallW;
+                  smallCanvas.height = smallH;
+                  const smallCtx = smallCanvas.getContext('2d')!;
+                  smallCtx.imageSmoothingEnabled = false;
+                  smallCtx.drawImage(canvas, regionX, regionY, regionW, regionH, 0, 0, smallW, smallH);
+
+                  ctx.imageSmoothingEnabled = false;
+                  ctx.drawImage(smallCanvas, 0, 0, smallW, smallH, regionX, regionY, regionW, regionH);
+                  ctx.imageSmoothingEnabled = true;
+                }
+              };
+
+              // Pre-assign footnote numbers to all tracks and build index
+              const trackFootnotes = new Map<string, number>();
+              for (let i = 0; i < trackFirstAppearances.length; i++) {
+                const { trackId, detection, startTimeMs, endTimeMs } = trackFirstAppearances[i];
+                const footnoteNum = footnoteCounter++;
+                trackFootnotes.set(trackId, footnoteNum);
+
                 const bboxX = detection.bbox_x ?? 0;
                 const bboxY = detection.bbox_y ?? 0;
                 const vPos = bboxY < 0.33 ? 'upper' : bboxY < 0.66 ? 'middle' : 'lower';
                 const hPos = bboxX < 0.33 ? 'left' : bboxX < 0.66 ? 'center' : 'right';
                 const position = vPos === 'middle' && hPos === 'center' ? 'center' : `${vPos}-${hPos}`;
-
                 const isRejected = detection.status === 'rejected';
-                const footnoteNum = footnoteCounter++;
                 const exemptionCode = (detection.exemption_code || (isRejected ? '' : 'b6')) as ExemptionCode;
                 const timeRange = `${formatTime(startTimeMs)} - ${formatTime(endTimeMs)}`;
 
-                // Add to summary index
                 redactionIndex.push({
                   footnote: footnoteNum,
-                  frame: frameIdx + 1,
+                  frame: 0, // Will be updated when we know which page
                   trackId,
                   position,
                   timeRange,
@@ -310,38 +330,117 @@ export function RequestsList({
                   exemptionLabel: exemptionCode ? (EXEMPTION_LABELS[exemptionCode] || exemptionCode) : '',
                   comment: detection.comment || '',
                 });
+              }
 
-                // Draw redaction rectangle on canvas
-                const x = (detection.bbox_x ?? 0) * canvas.width;
-                const y = (detection.bbox_y ?? 0) * canvas.height;
-                const w = (detection.bbox_width ?? 0) * canvas.width;
-                const h = (detection.bbox_height ?? 0) * canvas.height;
+              // Group tracks that start within 1 second of each other into pages
+              const TIME_GROUP_THRESHOLD = 1000; // 1 second
+              const pageGroups: Array<typeof trackFirstAppearances> = [];
+              let currentGroup: typeof trackFirstAppearances = [];
+              let groupStartTime = trackFirstAppearances[0]?.startTimeMs ?? 0;
 
-                if (isRejected) {
-                  // Dashed red outline for rejected
-                  ctx.strokeStyle = '#CC0000';
-                  ctx.lineWidth = 3;
-                  ctx.setLineDash([8, 5]);
-                  ctx.strokeRect(x, y, w, h);
-                  ctx.setLineDash([]);
-
-                  // Red footnote marker outside top-right
-                  ctx.fillStyle = '#CC0000';
-                  ctx.font = 'bold 16px Arial';
-                  const markerText = `[${footnoteNum}]`;
-                  const textWidth = ctx.measureText(markerText).width;
-                  ctx.fillText(markerText, x + w - textWidth, y - 6);
+              for (const track of trackFirstAppearances) {
+                if (track.startTimeMs - groupStartTime <= TIME_GROUP_THRESHOLD) {
+                  currentGroup.push(track);
                 } else {
-                  // Solid black rectangle for approved
-                  ctx.fillStyle = '#000000';
-                  ctx.fillRect(x, y, w, h);
+                  if (currentGroup.length > 0) pageGroups.push(currentGroup);
+                  currentGroup = [track];
+                  groupStartTime = track.startTimeMs;
+                }
+              }
+              if (currentGroup.length > 0) pageGroups.push(currentGroup);
 
-                  // White footnote marker on black
-                  ctx.fillStyle = '#FFFFFF';
-                  ctx.font = 'bold 16px Arial';
-                  const markerText = `[${footnoteNum}]`;
-                  const textWidth = ctx.measureText(markerText).width;
-                  ctx.fillText(markerText, x + w - textWidth - 4, y + 18);
+              // Update frame numbers in redactionIndex
+              let frameNum = 1;
+              for (const group of pageGroups) {
+                for (const track of group) {
+                  const entry = redactionIndex.find(e => e.trackId === track.trackId);
+                  if (entry) entry.frame = frameNum;
+                }
+                frameNum++;
+              }
+
+              // Process each page group
+              for (let pageIdx = 0; pageIdx < pageGroups.length; pageIdx++) {
+                const pageGroup = pageGroups[pageIdx];
+                const firstTrack = pageGroup[0];
+
+                // Capture frame at a point where faces are clearly visible
+                const trackDuration = firstTrack.endTimeMs - firstTrack.startTimeMs;
+                const captureTimeMs = trackDuration > 1000
+                  ? firstTrack.startTimeMs + 500
+                  : firstTrack.startTimeMs + Math.floor(trackDuration / 2);
+                const canvas = await captureFrame(captureTimeMs);
+                const ctx = canvas.getContext('2d')!;
+
+                // Render ALL approved tracks on this page
+                // Find the detection closest to this frame's capture time for accurate positions
+                for (const track of trackFirstAppearances) {
+                  const trackFootnote = trackFootnotes.get(track.trackId) || 0;
+
+                  // Find the detection closest to the capture time for best coordinates
+                  const trackDets = trackMap.get(track.trackId) || [];
+                  let bestDet = track.detection;
+
+                  if (trackDets.length > 0) {
+                    let bestTimeDiff = Infinity;
+                    for (const det of trackDets) {
+                      const detTime = det.start_time_ms || 0;
+                      const timeDiff = Math.abs(detTime - captureTimeMs);
+                      if (timeDiff < bestTimeDiff) {
+                        bestTimeDiff = timeDiff;
+                        bestDet = det;
+                      }
+                    }
+                  }
+
+                  // Use coordinates, ensuring they're valid
+                  const bx = (bestDet.bbox_x ?? track.detection.bbox_x ?? 0) * canvas.width;
+                  const by = (bestDet.bbox_y ?? track.detection.bbox_y ?? 0) * canvas.height;
+                  const bw = (bestDet.bbox_width ?? track.detection.bbox_width ?? 0.1) * canvas.width;
+                  const bh = (bestDet.bbox_height ?? track.detection.bbox_height ?? 0.1) * canvas.height;
+
+                  // Skip if coordinates are invalid (too small or zero)
+                  if (bw < 10 || bh < 10) continue;
+
+                  if (track.detection.status === 'approved') {
+                    // Pixelate approved faces
+                    pixelateRegion(ctx, canvas, bx, by, bw, bh);
+
+                    // Footnote marker with background
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    const markerText = `[${trackFootnote}]`;
+                    ctx.font = 'bold 16px Arial';
+                    const textWidth = ctx.measureText(markerText).width;
+                    ctx.fillRect(bx + bw - textWidth - 8, by + 2, textWidth + 6, 20);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillText(markerText, bx + bw - textWidth - 5, by + 18);
+                  } else {
+                    // Dashed red outline for rejected
+                    ctx.strokeStyle = '#CC0000';
+                    ctx.lineWidth = 3;
+                    ctx.setLineDash([8, 5]);
+                    ctx.strokeRect(bx, by, bw, bh);
+                    ctx.setLineDash([]);
+
+                    // Red footnote marker outside top-right
+                    ctx.fillStyle = '#CC0000';
+                    ctx.font = 'bold 16px Arial';
+                    const markerText = `[${trackFootnote}]`;
+                    const textWidth = ctx.measureText(markerText).width;
+                    ctx.fillText(markerText, bx + bw - textWidth, by - 6);
+                  }
+                }
+
+                // Draw highlight borders for all tracks documented on this page
+                for (const groupTrack of pageGroup) {
+                  const x = (groupTrack.detection.bbox_x ?? 0) * canvas.width;
+                  const y = (groupTrack.detection.bbox_y ?? 0) * canvas.height;
+                  const w = (groupTrack.detection.bbox_width ?? 0) * canvas.width;
+                  const h = (groupTrack.detection.bbox_height ?? 0) * canvas.height;
+
+                  ctx.strokeStyle = '#FFCC00';
+                  ctx.lineWidth = 4;
+                  ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
                 }
 
                 // Convert canvas to PNG
@@ -349,13 +448,13 @@ export function RequestsList({
                 const pngBytes = await fetch(pngDataUrl).then(r => r.arrayBuffer());
                 const pngImage = await videoPdf.embedPng(pngBytes);
 
-                // Calculate page dimensions with mini-index
+                // Calculate page dimensions with mini-index for all tracks in this group
                 const imgWidth = pngImage.width / 2;
                 const imgHeight = pngImage.height / 2;
                 const indexMargin = 20;
                 const lineHeight = 14;
                 const headerSpace = 25;
-                const indexHeight = headerSpace + lineHeight + indexMargin;
+                const indexHeight = headerSpace + (lineHeight * pageGroup.length) + indexMargin;
                 const totalPageHeight = imgHeight + indexHeight;
 
                 // Add page
@@ -369,10 +468,11 @@ export function RequestsList({
                   height: imgHeight,
                 });
 
-                // Mini-index below image
+                // Mini-index below image - show all tracks documented on this page
                 let indexY = indexHeight - indexMargin;
+                const groupTimeRange = `${formatTime(firstTrack.startTimeMs)} - ${formatTime(Math.max(...pageGroup.map(t => t.endTimeMs)))}`;
 
-                pdfPage.drawText(`Frame ${frameIdx + 1}: Track ${trackId} (${timeRange})`, {
+                pdfPage.drawText(`Frame ${pageIdx + 1}: ${pageGroup.length} face(s) (${groupTimeRange})`, {
                   x: indexMargin,
                   y: indexY,
                   size: 10,
@@ -381,29 +481,38 @@ export function RequestsList({
                 });
                 indexY -= lineHeight + 2;
 
-                const statusText = isRejected ? 'REJECTED' : 'REDACTED';
-                const statusColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0.5, 0);
-                const textColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0, 0);
+                // Show each track in this page group
+                for (const groupTrack of pageGroup) {
+                  const entry = redactionIndex.find(e => e.trackId === groupTrack.trackId);
+                  if (!entry) continue;
 
-                pdfPage.drawText(`[${footnoteNum}] ${position} - Face`, { x: indexMargin, y: indexY, size: 8, font: font, color: textColor });
-                pdfPage.drawText(statusText, { x: indexMargin + 100, y: indexY, size: 8, font: boldFont, color: statusColor });
+                  const isRejected = entry.status === 'rejected';
+                  const statusText = isRejected ? 'REJECTED' : 'REDACTED';
+                  const statusColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0.5, 0);
+                  const textColor = isRejected ? rgb(0.8, 0, 0) : rgb(0, 0, 0);
 
-                if (!isRejected && exemptionCode) {
-                  pdfPage.drawText(`${exemptionCode}: ${detection.comment || ''}`, {
-                    x: indexMargin + 165,
-                    y: indexY,
-                    size: 8,
-                    font: font,
-                    color: rgb(0.3, 0.3, 0.3),
-                  });
-                } else if (isRejected) {
-                  pdfPage.drawText(detection.comment || 'Not redacted', {
-                    x: indexMargin + 165,
-                    y: indexY,
-                    size: 8,
-                    font: font,
-                    color: rgb(0.5, 0.5, 0.5),
-                  });
+                  pdfPage.drawText(`[${entry.footnote}] ${entry.position}`, { x: indexMargin, y: indexY, size: 8, font: font, color: textColor });
+                  pdfPage.drawText(statusText, { x: indexMargin + 80, y: indexY, size: 8, font: boldFont, color: statusColor });
+
+                  if (!isRejected && entry.exemptionCode) {
+                    pdfPage.drawText(`${entry.exemptionCode}: ${entry.comment || ''}`, {
+                      x: indexMargin + 145,
+                      y: indexY,
+                      size: 8,
+                      font: font,
+                      color: rgb(0.3, 0.3, 0.3),
+                    });
+                  } else if (isRejected) {
+                    pdfPage.drawText(entry.comment || 'Not redacted', {
+                      x: indexMargin + 145,
+                      y: indexY,
+                      size: 8,
+                      font: font,
+                      color: rgb(0.5, 0.5, 0.5),
+                    });
+                  }
+
+                  indexY -= lineHeight;
                 }
               }
 
