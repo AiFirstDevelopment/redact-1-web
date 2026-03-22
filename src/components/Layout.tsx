@@ -9,9 +9,10 @@ interface LayoutProps {
   activeTab: Tab;
   onTabChange: (tab: Tab) => void;
   rightPanel?: React.ReactNode;
+  intakeCount?: number;
 }
 
-export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutProps) {
+export function Layout({ children, activeTab, onTabChange, rightPanel, intakeCount = 0 }: LayoutProps) {
   const { user, agency } = useAuthStore();
   const { signOut } = useClerk();
   const isSupervisor = user?.role === 'supervisor';
@@ -57,13 +58,18 @@ export function Layout({ children, activeTab, onTabChange, rightPanel }: LayoutP
                 <button
                   key={tab.id}
                   onClick={() => onTabChange(tab.id)}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
                     activeTab === tab.id
                       ? 'border-blue-600 text-blue-700'
                       : 'border-transparent text-slate-600 hover:text-slate-800'
                   }`}
                 >
                   {tab.label}
+                  {tab.id === 'intake' && intakeCount > 0 && activeTab !== 'intake' && (
+                    <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                      {intakeCount}
+                    </span>
+                  )}
                 </button>
               );
             })}

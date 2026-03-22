@@ -1273,20 +1273,22 @@ export function RequestsList({
                   <span className="ml-3" title="Response due date">Due: {formatDate(request.due_date)}</span>
                 )}
               </p>
-              <div className="mt-2" onClick={(e) => e.stopPropagation()}>
-                <select
-                  value={request.created_by}
-                  onChange={(e) => handleAssignmentChange(e, request.id)}
-                  disabled={assigningId === request.id}
-                  className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  {users.map((user) => (
-                    <option key={user.id} value={user.id}>
-                      {user.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!showIntake && (
+                <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                  <select
+                    value={request.created_by}
+                    onChange={(e) => handleAssignmentChange(e, request.id)}
+                    disabled={assigningId === request.id}
+                    className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                  >
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="flex gap-1 ml-4">
               {!showArchived && !showIntake && (
@@ -1305,6 +1307,7 @@ export function RequestsList({
               )}
               {showIntake && (
                 <select
+                  key={`assign-${request.id}`}
                   onClick={(e) => e.stopPropagation()}
                   onChange={(e) => {
                     if (e.target.value && onAssignRequest) {
@@ -1324,10 +1327,10 @@ export function RequestsList({
                       }, 300);
                     }
                   }}
-                  value=""
-                  className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                  defaultValue=""
+                  className="text-sm px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white w-[130px] truncate"
                 >
-                  <option value="">Assign to...</option>
+                  <option value="" disabled>Assign to...</option>
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
                       {user.name}
@@ -1433,7 +1436,7 @@ export function RequestsList({
                   </svg>
                 </button>
               )}
-              {!showIntake && (deleteConfirm === request.id ? (
+              {deleteConfirm === request.id ? (
                 <div className="flex items-center bg-red-500 rounded-full shadow-sm" title="Delete">
                   <button
                     onClick={(e) => {
@@ -1474,7 +1477,7 @@ export function RequestsList({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                   </svg>
                 </button>
-              ))}
+              )}
             </div>
           </div>
         </div>

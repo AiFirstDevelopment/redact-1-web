@@ -24,6 +24,7 @@ export function MainPage() {
   const [archivedLoadingMore, setArchivedLoadingMore] = useState(false);
   const [intakeRequests, setIntakeRequests] = useState<Request[]>([]);
   const [intakeTotal, setIntakeTotal] = useState(0);
+  const [intakeSeenCount, setIntakeSeenCount] = useState(0); // Track last seen count for badge
   const [intakeLoading, setIntakeLoading] = useState(false);
   const [intakeLoadingMore, setIntakeLoadingMore] = useState(false);
   const [intakeSearchTerm, setIntakeSearchTerm] = useState('');
@@ -141,6 +142,31 @@ export function MainPage() {
     }
   }, [activeTab, intakeSearchTerm, fetchIntakeRequests]);
 
+  // Poll intake queue every 30 seconds (always, for badge count)
+  useEffect(() => {
+    const fetchLatest = async () => {
+      try {
+        const { requests: newRequests, total: newTotal } = await api.listIntakeRequests({
+          search: activeTab === 'intake' ? intakeSearchTerm || undefined : undefined,
+          offset: 0,
+          limit: 25,
+        });
+        setIntakeRequests(newRequests);
+        setIntakeTotal(newTotal);
+      } catch (e) {
+        console.error('Failed to fetch intake requests:', e);
+      }
+    };
+
+    // Fetch immediately on mount
+    fetchLatest();
+
+    // Then poll every 30 seconds
+    const pollInterval = setInterval(fetchLatest, 30000);
+
+    return () => clearInterval(pollInterval);
+  }, [activeTab, intakeSearchTerm]);
+
   // Debounced search for archived requests
   useEffect(() => {
     if (activeTab === 'archived') {
@@ -241,6 +267,10 @@ export function MainPage() {
   const handleTabChange = (tab: Tab) => {
     setActiveTab(tab);
     handleClosePanel();
+    // Mark all intake requests as "seen" when viewing the tab
+    if (tab === 'intake') {
+      setIntakeSeenCount(intakeTotal);
+    }
   };
 
   const handleSearchChange = (term: string) => {
@@ -388,6 +418,7 @@ export function MainPage() {
       activeTab={activeTab}
       onTabChange={handleTabChange}
       rightPanel={renderRightPanel()}
+      intakeCount={Math.max(0, intakeTotal - intakeSeenCount)}
     >
       {renderContent()}
     </Layout>

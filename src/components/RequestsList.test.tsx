@@ -1555,6 +1555,25 @@ describe('RequestsList', () => {
 
         expect(screen.getByText('All Assignees')).toBeInTheDocument();
       });
+
+      it('hides in-card assignee reassignment dropdown in intake view', async () => {
+        renderRequestsList({
+          requests: [intakeRequest],
+          showIntake: true,
+          onAssignRequest: vi.fn(),
+        });
+
+        await waitFor(() => {
+          // The "Assign to..." dropdown for intake should exist
+          expect(screen.getByText('Assign to...')).toBeInTheDocument();
+        });
+
+        // But the in-card reassignment dropdown (showing user name) should not
+        // In regular view this would show the current assignee's name
+        const dropdowns = screen.getAllByRole('combobox');
+        // Should only have the "Assign to..." dropdown, not the reassignment one
+        expect(dropdowns.length).toBe(1);
+      });
     });
 
     describe('assignment dropdown', () => {
@@ -1657,7 +1676,7 @@ describe('RequestsList', () => {
         expect(screen.getByTitle('Archive')).toBeInTheDocument();
       });
 
-      it('hides delete button in intake view', () => {
+      it('shows delete button in intake view', () => {
         renderRequestsList({
           requests: [intakeRequest],
           showIntake: true,
@@ -1665,7 +1684,7 @@ describe('RequestsList', () => {
           onDelete: vi.fn(),
         });
 
-        expect(screen.queryByTitle('Delete')).not.toBeInTheDocument();
+        expect(screen.getByTitle('Delete')).toBeInTheDocument();
       });
 
       it('shows delete button in regular requests view', () => {

@@ -267,4 +267,63 @@ describe('Layout', () => {
       expect(screen.getByText('Main Content')).toBeInTheDocument();
     });
   });
+
+  describe('Intake Badge', () => {
+    beforeEach(() => {
+      (useAuthStore as any).mockReturnValue({
+        user: mockSupervisor,
+        agency: mockAgency,
+      });
+    });
+
+    it('should show intake badge with count when intakeCount > 0 and not on intake tab', () => {
+      render(
+        <Layout activeTab="requests" onTabChange={mockOnTabChange} intakeCount={5}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      expect(screen.getByText('5')).toBeInTheDocument();
+    });
+
+    it('should hide intake badge when intakeCount is 0', () => {
+      render(
+        <Layout activeTab="requests" onTabChange={mockOnTabChange} intakeCount={0}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      expect(screen.queryByText('0')).not.toBeInTheDocument();
+    });
+
+    it('should hide intake badge when on intake tab even with count > 0', () => {
+      render(
+        <Layout activeTab="intake" onTabChange={mockOnTabChange} intakeCount={5}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      // The badge should not be visible when intake tab is active
+      const intakeTab = screen.getByRole('button', { name: /intake/i });
+      expect(intakeTab).toBeInTheDocument();
+      // Badge text "5" should not appear as a separate element
+      expect(screen.queryByText('5')).not.toBeInTheDocument();
+    });
+
+    it('should not show badge for clerk users', () => {
+      (useAuthStore as any).mockReturnValue({
+        user: mockClerk,
+        agency: mockAgency,
+      });
+
+      render(
+        <Layout activeTab="requests" onTabChange={mockOnTabChange} intakeCount={5}>
+          <div>Content</div>
+        </Layout>
+      );
+
+      // Intake tab shouldn't exist for clerk
+      expect(screen.queryByRole('button', { name: /intake/i })).not.toBeInTheDocument();
+    });
+  });
 });
