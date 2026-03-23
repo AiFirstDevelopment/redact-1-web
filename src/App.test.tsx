@@ -14,7 +14,7 @@ vi.mock('@clerk/clerk-react', () => ({
     getToken: vi.fn().mockResolvedValue('mock-token'),
   }),
   useUser: () => ({
-    user: { id: 'user_123', emailAddresses: [{ emailAddress: 'test@test.com' }] },
+    user: { id: 'user_123', emailAddresses: [{ emailAddress: 'test@test.com' }], twoFactorEnabled: true },
   }),
   useClerk: () => ({
     signOut: vi.fn(),

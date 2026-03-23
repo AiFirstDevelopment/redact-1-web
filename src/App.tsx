@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { SignedIn, SignedOut, useAuth, useUser } from '@clerk/clerk-react';
 import { useAuthStore } from './stores/authStore';
-import { EnrollmentPage, MainPage, FileReviewPage, VideoReviewPage, ConsolePage, SignUpPage, SignInPage } from './pages';
+import { EnrollmentPage, MainPage, FileReviewPage, VideoReviewPage, ConsolePage, SignUpPage, SignInPage, MfaEnrollPage } from './pages';
 
 function AuthSync({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
@@ -21,6 +21,11 @@ function AuthSync({ children }: { children: React.ReactNode }) {
         <div className="text-gray-500">Loading...</div>
       </div>
     );
+  }
+
+  // User is signed in but hasn't set up MFA (required for CJIS compliance)
+  if (isSignedIn && clerkUser && !clerkUser.twoFactorEnabled) {
+    return <MfaEnrollPage />;
   }
 
   // User is signed in but not enrolled in an agency

@@ -11,6 +11,7 @@ vi.mock('react-router-dom', () => ({
 // Mock Clerk signIn
 const mockCreate = vi.fn();
 const mockAttemptFirstFactor = vi.fn();
+const mockAttemptSecondFactor = vi.fn();
 const mockSetActive = vi.fn();
 
 vi.mock('@clerk/clerk-react', () => ({
@@ -19,6 +20,7 @@ vi.mock('@clerk/clerk-react', () => ({
     signIn: {
       create: mockCreate,
       attemptFirstFactor: mockAttemptFirstFactor,
+      attemptSecondFactor: mockAttemptSecondFactor,
     },
     setActive: mockSetActive,
   }),
@@ -115,7 +117,7 @@ describe('SignInPage', () => {
       });
     });
 
-    it('shows incomplete sign in error when status is not complete', async () => {
+    it('shows MFA verification screen when needs_second_factor', async () => {
       mockCreate.mockResolvedValue({
         status: 'needs_second_factor',
         createdSessionId: null,
@@ -132,7 +134,29 @@ describe('SignInPage', () => {
       fireEvent.click(signInButton);
 
       await waitFor(() => {
-        expect(screen.getByText('Sign in incomplete. Please try again.')).toBeInTheDocument();
+        expect(screen.getByText('Two-Factor Authentication')).toBeInTheDocument();
+        expect(screen.getByText('Enter the 6-digit code from your authenticator app')).toBeInTheDocument();
+      });
+    });
+
+    it('shows incomplete sign in error when status is unexpected', async () => {
+      mockCreate.mockResolvedValue({
+        status: 'needs_identifier',
+        createdSessionId: null,
+      });
+
+      render(<SignInPage />);
+
+      const emailInput = getEmailInput();
+      const passwordInput = getPasswordInput();
+      const signInButton = screen.getByRole('button', { name: /sign in/i });
+
+      fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
+      fireEvent.change(passwordInput, { target: { value: 'password123' } });
+      fireEvent.click(signInButton);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Sign in status: needs_identifier/)).toBeInTheDocument();
       });
     });
 
@@ -508,6 +532,216 @@ describe('SignInPage', () => {
     it('shows loading state when Clerk is not loaded', () => {
       // This test is handled in the separate describe block below
       // due to module mocking limitations
+    });
+  });
+
+  describe('MFA Verification Flow', () => {
+    beforeEach(() => {
+      mockCreate.mockResolvedValue({
+        status: 'needs_second_factor',
+        createdSessionId: null,
+      });
+    });
+
+    const navigateToMfaScreen = async () => {
+      render(<SignInPage />);
+
+      const emailInput = getEmailInput();
+      const passwordInput = getPasswordInput();
+      const signInButton = screen.getByRole('button', { name: /sign in/i });
+
+      fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
+      fireEvent.change(passwordInput, { target: { value: 'password123' } });
+      fireEvent.click(signInButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Two-Factor Authentication')).toBeInTheDocument();
+      });
+    };
+
+    it('allows entering MFA code', async () => {
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000') as HTMLInputElement;
+      fireEvent.change(mfaInput, { target: { value: '123456' } });
+
+      expect(mfaInput.value).toBe('123456');
+    });
+
+    it('only allows numeric input in MFA code field', async () => {
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000') as HTMLInputElement;
+      fireEvent.change(mfaInput, { target: { value: 'abc123' } });
+
+      expect(mfaInput.value).toBe('123');
+    });
+
+    it('limits MFA code to 6 digits', async () => {
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000') as HTMLInputElement;
+      fireEvent.change(mfaInput, { target: { value: '12345678' } });
+
+      expect(mfaInput.value).toBe('123456');
+    });
+
+    it('disables verify button when code is not 6 digits', async () => {
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000');
+      fireEvent.change(mfaInput, { target: { value: '123' } });
+
+      const verifyButton = screen.getByRole('button', { name: /verify/i });
+      expect(verifyButton).toBeDisabled();
+    });
+
+    it('enables verify button when code is 6 digits', async () => {
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000');
+      fireEvent.change(mfaInput, { target: { value: '123456' } });
+
+      const verifyButton = screen.getByRole('button', { name: /verify/i });
+      expect(verifyButton).not.toBeDisabled();
+    });
+
+    it('successful MFA verification navigates to home', async () => {
+      mockAttemptSecondFactor.mockResolvedValue({
+        status: 'complete',
+        createdSessionId: 'session_mfa_123',
+      });
+      mockSetActive.mockResolvedValue(undefined);
+
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000');
+      fireEvent.change(mfaInput, { target: { value: '123456' } });
+
+      const verifyButton = screen.getByRole('button', { name: /verify/i });
+      fireEvent.click(verifyButton);
+
+      await waitFor(() => {
+        expect(mockAttemptSecondFactor).toHaveBeenCalledWith({
+          strategy: 'totp',
+          code: '123456',
+        });
+        expect(mockSetActive).toHaveBeenCalledWith({ session: 'session_mfa_123' });
+        expect(mockNavigate).toHaveBeenCalledWith('/');
+      });
+    });
+
+    it('shows error on failed MFA verification', async () => {
+      mockAttemptSecondFactor.mockRejectedValue({
+        errors: [{ longMessage: 'Invalid code' }],
+      });
+
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000');
+      fireEvent.change(mfaInput, { target: { value: '000000' } });
+
+      const verifyButton = screen.getByRole('button', { name: /verify/i });
+      fireEvent.click(verifyButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Invalid code')).toBeInTheDocument();
+      });
+    });
+
+    it('shows loading state during MFA verification', async () => {
+      let resolveVerify: (value: unknown) => void;
+      mockAttemptSecondFactor.mockImplementation(() => new Promise((resolve) => {
+        resolveVerify = resolve;
+      }));
+
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000');
+      fireEvent.change(mfaInput, { target: { value: '123456' } });
+
+      const verifyButton = screen.getByRole('button', { name: /verify/i });
+      fireEvent.click(verifyButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Verifying...')).toBeInTheDocument();
+      });
+
+      resolveVerify!({ status: 'complete', createdSessionId: 'session_123' });
+    });
+
+    it('back button returns to sign in form and clears state', async () => {
+      await navigateToMfaScreen();
+
+      const backButton = screen.getByText(/back to sign in/i);
+      fireEvent.click(backButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sign in to Redact-1')).toBeInTheDocument();
+      });
+
+      // Password should be cleared
+      const passwordInput = getPasswordInput();
+      expect(passwordInput.value).toBe('');
+    });
+
+    it('shows incomplete error when MFA status is not complete', async () => {
+      mockAttemptSecondFactor.mockResolvedValue({
+        status: 'needs_first_factor',
+        createdSessionId: null,
+      });
+
+      await navigateToMfaScreen();
+
+      const mfaInput = screen.getByPlaceholderText('000000');
+      fireEvent.change(mfaInput, { target: { value: '123456' } });
+
+      const verifyButton = screen.getByRole('button', { name: /verify/i });
+      fireEvent.click(verifyButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Verification incomplete. Please try again.')).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Password Reset with MFA', () => {
+    beforeEach(async () => {
+      mockCreate.mockResolvedValue({});
+    });
+
+    it('shows MFA screen after password reset when user has MFA enabled', async () => {
+      mockAttemptFirstFactor.mockResolvedValue({
+        status: 'needs_second_factor',
+        createdSessionId: null,
+      });
+
+      render(<SignInPage />);
+
+      // Navigate to forgot password
+      fireEvent.click(screen.getByText(/forgot password\?/i));
+
+      // Enter email and submit
+      const emailInput = getEmailInput();
+      fireEvent.change(emailInput, { target: { value: 'test@example.com' } });
+      fireEvent.click(screen.getByRole('button', { name: /send reset code/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Reset code')).toBeInTheDocument();
+      });
+
+      // Enter reset code and new password
+      const codeInput = screen.getByPlaceholderText('Enter code from email');
+      const newPasswordInput = screen.getByPlaceholderText('At least 12 characters');
+
+      fireEvent.change(codeInput, { target: { value: '123456' } });
+      fireEvent.change(newPasswordInput, { target: { value: 'NewPassword123!' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /reset password/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Two-Factor Authentication')).toBeInTheDocument();
+      });
     });
   });
 });

@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useSignUp } from '@clerk/clerk-react';
+import { useSignUp, useUser } from '@clerk/clerk-react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
+
+type TOTPResource = {
+  id: string;
+  secret?: string;
+  uri?: string;
+  verified: boolean;
+};
 
 function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
   return (
@@ -22,6 +29,7 @@ function PasswordRequirement({ met, text }: { met: boolean; text: string }) {
 
 export function SignUpPage() {
   const { isLoaded, signUp, setActive } = useSignUp();
+  const { user } = useUser();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -34,6 +42,11 @@ export function SignUpPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // MFA enrollment state
+  const [mfaStep, setMfaStep] = useState<'none' | 'setup' | 'verify'>('none');
+  const [totp, setTotp] = useState<TOTPResource | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+
   // Track when user visits sign-up page
   useEffect(() => {
     if (emailFromUrl) {
@@ -42,6 +55,33 @@ export function SignUpPage() {
       });
     }
   }, [emailFromUrl]);
+
+  // Auto-create TOTP when entering MFA setup
+  useEffect(() => {
+    if (mfaStep === 'setup' && user && !totp) {
+      // Check if already enabled
+      if (user.twoFactorEnabled) {
+        navigate('/');
+        return;
+      }
+      // Create TOTP automatically
+      setLoading(true);
+      user.createTOTP()
+        .then((totpResource) => {
+          setTotp(totpResource as unknown as TOTPResource);
+          setMfaStep('verify');
+        })
+        .catch((err: any) => {
+          const message = err.errors?.[0]?.longMessage || err.message || '';
+          if (message.toLowerCase().includes('already')) {
+            navigate('/');
+          } else {
+            setError(message || 'Failed to create authenticator');
+          }
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [mfaStep, user, totp, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,9 +120,60 @@ export function SignUpPage() {
 
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
-        navigate('/');
+        // Move to MFA enrollment
+        setMfaStep('setup');
       } else {
         setError('Verification incomplete. Please try again.');
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage || err.message || 'Verification failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateTOTP = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Check if already enabled
+      if (user.twoFactorEnabled) {
+        navigate('/');
+        return;
+      }
+      const totpResource = await user.createTOTP();
+      setTotp(totpResource as unknown as TOTPResource);
+      setMfaStep('verify');
+    } catch (err: any) {
+      const message = err.errors?.[0]?.longMessage || err.message || '';
+      // If TOTP already enabled, just proceed to app
+      if (message.toLowerCase().includes('already enabled') || message.toLowerCase().includes('already exists')) {
+        navigate('/');
+        return;
+      }
+      setError(message || 'Failed to create authenticator');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyTOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await user.verifyTOTP({ code: mfaCode });
+      if (result.verified) {
+        // Go directly to app after MFA setup - no backup codes screen
+        navigate('/');
+      } else {
+        setError('Invalid code. Please try again.');
       }
     } catch (err: any) {
       setError(err.errors?.[0]?.longMessage || err.message || 'Verification failed');
@@ -95,6 +186,100 @@ export function SignUpPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-cover bg-center" style={{ backgroundImage: "url('/office-1.png')" }}>
         <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // MFA Setup - loading while creating TOTP
+  if (mfaStep === 'setup') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cover bg-center" style={{ backgroundImage: "url('/office-1.png')" }}>
+        <div className="bg-pastel-mint p-8 rounded-lg shadow-md w-full max-w-md">
+          <h1 className="text-2xl font-bold text-center text-white mb-2">
+            Setting Up Two-Factor Authentication
+          </h1>
+          <p className="text-white/80 text-center mb-6">
+            Please wait...
+          </p>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+              <button
+                onClick={handleCreateTOTP}
+                className="w-full mt-4 py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-md transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // MFA Setup - scan QR code and verify
+  if (mfaStep === 'verify' && totp) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cover bg-center" style={{ backgroundImage: "url('/office-1.png')" }}>
+        <div className="bg-pastel-mint p-8 rounded-lg shadow-md w-full max-w-md">
+          <h1 className="text-2xl font-bold text-center text-white mb-2">
+            Scan QR Code
+          </h1>
+          <p className="text-white/80 text-center mb-4">
+            Scan this QR code with your authenticator app
+          </p>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+
+          {totp.uri && (
+            <div className="bg-white p-4 rounded-lg mb-4 flex justify-center">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totp.uri)}`}
+                alt="QR Code for authenticator app"
+                className="w-48 h-48"
+              />
+            </div>
+          )}
+
+          {totp.secret && (
+            <div className="mb-4">
+              <p className="text-white/60 text-sm text-center mb-1">Or enter this code manually:</p>
+              <p className="bg-white/10 text-white font-mono text-center py-2 px-4 rounded select-all text-sm">
+                {totp.secret}
+              </p>
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyTOTP} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white mb-1">
+                Enter the 6-digit code from your app
+              </label>
+              <input
+                type="text"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 text-center text-2xl tracking-widest"
+                required
+                maxLength={6}
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || mfaCode.length !== 6}
+              className="w-full py-2 px-4 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-medium rounded-md transition-colors"
+            >
+              {loading ? 'Verifying...' : 'Verify & Continue'}
+            </button>
+          </form>
+        </div>
       </div>
     );
   }

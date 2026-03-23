@@ -5,3 +5,4 @@ export { VideoReviewPage } from './VideoReviewPage';
 export { ConsolePage } from './ConsolePage';
 export { SignUpPage } from './SignUpPage';
 export { SignInPage } from './SignInPage';
+export { MfaEnrollPage } from './MfaEnrollPage';

@@ -12,6 +12,10 @@ export function SignInPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // MFA state
+  const [needsMfa, setNeedsMfa] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+
   // Forgot password state
   const [forgotPassword, setForgotPassword] = useState(false);
   const [resetCode, setResetCode] = useState('');
@@ -35,11 +39,40 @@ export function SignInPage() {
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
         navigate('/');
+      } else if (result.status === 'needs_second_factor') {
+        // User has MFA enabled, need to verify
+        setNeedsMfa(true);
       } else {
-        setError('Sign in incomplete. Please try again.');
+        setError(`Sign in status: ${result.status}. Please try again.`);
       }
     } catch (err: any) {
       setError(err.errors?.[0]?.longMessage || err.message || 'Sign in failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMfaVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded || !signIn) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const result = await signIn.attemptSecondFactor({
+        strategy: 'totp',
+        code: mfaCode,
+      });
+
+      if (result.status === 'complete') {
+        await setActive({ session: result.createdSessionId });
+        navigate('/');
+      } else {
+        setError('Verification incomplete. Please try again.');
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.longMessage || err.message || 'Verification failed');
     } finally {
       setLoading(false);
     }
@@ -82,6 +115,11 @@ export function SignInPage() {
       if (result.status === 'complete') {
         await setActive({ session: result.createdSessionId });
         navigate('/');
+      } else if (result.status === 'needs_second_factor') {
+        // Password reset succeeded, now need MFA
+        setForgotPassword(false);
+        setResetSent(false);
+        setNeedsMfa(true);
       } else {
         setError('Password reset incomplete. Please try again.');
       }
@@ -241,6 +279,65 @@ export function SignInPage() {
               type="button"
               onClick={() => {
                 setForgotPassword(false);
+                setError('');
+              }}
+              className="w-full py-2 px-4 text-white/70 hover:text-white"
+            >
+              Back to Sign In
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // MFA verification
+  if (needsMfa) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-cover bg-center" style={{ backgroundImage: "url('/office-1.png')" }}>
+        <div className="bg-pastel-mint p-8 rounded-lg shadow-md w-full max-w-md">
+          <h1 className="text-2xl font-bold text-center text-white mb-2">
+            Two-Factor Authentication
+          </h1>
+          <p className="text-white/80 text-center mb-6">
+            Enter the 6-digit code from your authenticator app
+          </p>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleMfaVerify} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-white mb-1">
+                Verification code
+              </label>
+              <input
+                type="text"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 text-center text-2xl tracking-widest"
+                required
+                maxLength={6}
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || mfaCode.length !== 6}
+              className="w-full py-2 px-4 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 text-white font-medium rounded-md transition-colors"
+            >
+              {loading ? 'Verifying...' : 'Verify'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNeedsMfa(false);
+                setMfaCode('');
+                setPassword('');
                 setError('');
               }}
               className="w-full py-2 px-4 text-white/70 hover:text-white"
