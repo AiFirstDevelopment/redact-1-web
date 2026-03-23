@@ -850,6 +850,41 @@ class ApiService {
 
     return response.json();
   }
+
+  async adminVerifyAuditChain(): Promise<{
+    verification: {
+      valid: boolean;
+      totalEntries: number;
+      invalidAt?: number;
+      error?: string;
+      verifiedAt: number;
+    };
+    stats: {
+      total: number;
+      withHashChain: number;
+      legacyEntries: number;
+    };
+    recentEntries: Array<{
+      id: string;
+      action: string;
+      entity_type: string;
+      entity_id: string;
+      prev_hash: string | null;
+      entry_hash: string;
+      created_at: number;
+    }>;
+  }> {
+    const response = await fetch(`${API_BASE}/api/admin/audit/verify`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
 }
 
 export const api = new ApiService();

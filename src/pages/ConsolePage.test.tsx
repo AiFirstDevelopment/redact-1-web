@@ -16,6 +16,7 @@ vi.mock('../services/api', () => ({
     adminListAgencies: vi.fn(),
     adminCreateAgency: vi.fn(),
     adminCreateUser: vi.fn(),
+    adminVerifyAuditChain: vi.fn(),
   },
 }));
 
@@ -1303,6 +1304,241 @@ describe('ConsolePage', () => {
       await waitFor(() => {
         expect(screen.getByText(/Failed to fetch agencies/)).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Audit Log Integrity Verification', () => {
+    const mockValidAuditVerification = {
+      verification: {
+        valid: true,
+        totalEntries: 15,
+        verifiedAt: Date.now(),
+      },
+      stats: {
+        total: 15,
+        withHashChain: 15,
+        legacyEntries: 0,
+      },
+      recentEntries: [
+        {
+          id: 'entry-1',
+          action: 'login',
+          entity_type: 'user',
+          entity_id: 'user-123',
+          prev_hash: null,
+          entry_hash: 'abc123def456789012345678901234567890123456789012345678901234abcd',
+          created_at: Date.now(),
+        },
+        {
+          id: 'entry-2',
+          action: 'create_request',
+          entity_type: 'request',
+          entity_id: 'req-456',
+          prev_hash: 'abc123def456789012345678901234567890123456789012345678901234abcd',
+          entry_hash: 'def456abc789012345678901234567890123456789012345678901234567efgh',
+          created_at: Date.now(),
+        },
+      ],
+    };
+
+    const mockInvalidAuditVerification = {
+      verification: {
+        valid: false,
+        totalEntries: 10,
+        invalidAt: 5,
+        error: 'Entry 5 has incorrect entry_hash (data may have been modified)',
+        verifiedAt: Date.now(),
+      },
+      stats: {
+        total: 10,
+        withHashChain: 10,
+        legacyEntries: 0,
+      },
+      recentEntries: [],
+    };
+
+    beforeEach(() => {
+      (api.consoleGetSystemStatus as ReturnType<typeof vi.fn>).mockResolvedValue(mockSystemStatus);
+      (api.consoleGetUsageSummary as ReturnType<typeof vi.fn>).mockResolvedValue(mockUsage);
+      (api.consoleGetAWSMetrics as ReturnType<typeof vi.fn>).mockResolvedValue(mockAWSMetrics);
+      (api.consoleGetDailyUsage as ReturnType<typeof vi.fn>).mockResolvedValue(mockDailyUsage);
+      (api.consoleGetSystemPause as ReturnType<typeof vi.fn>).mockResolvedValue(mockPauseState);
+    });
+
+    it('should display audit integrity card with verify button', async () => {
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Audit Log Integrity (CJIS Compliance)')).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+    });
+
+    it('should display initial instructions before verification', async () => {
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Click "Verify Chain" to validate audit log integrity/)).toBeInTheDocument();
+      });
+    });
+
+    it('should show loading state while verifying', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(mockValidAuditVerification), 100))
+      );
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verifying...' })).toBeInTheDocument();
+      });
+    });
+
+    it('should display valid chain status with green indicator', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockResolvedValue(mockValidAuditVerification);
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Chain Verified - No Tampering Detected')).toBeInTheDocument();
+      });
+
+      // Check stats labels are displayed
+      expect(screen.getByText('Total Entries')).toBeInTheDocument();
+      expect(screen.getByText('With Hash Chain')).toBeInTheDocument();
+    });
+
+    it('should display invalid chain status with red indicator and error message', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockResolvedValue(mockInvalidAuditVerification);
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Chain Invalid - Tampering Detected')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Entry 5 has incorrect entry_hash/)).toBeInTheDocument();
+      expect(screen.getByText(/at entry index 5/)).toBeInTheDocument();
+    });
+
+    it('should display recent hashed entries with truncated hashes', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockResolvedValue(mockValidAuditVerification);
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Recent Hashed Entries:')).toBeInTheDocument();
+      });
+
+      // Check action names are displayed
+      expect(screen.getByText('login')).toBeInTheDocument();
+      expect(screen.getByText('create_request')).toBeInTheDocument();
+
+      // Check truncated hash format (Hash: abc123de...1234abcd)
+      expect(screen.getByText(/Hash: abc123def4567890/)).toBeInTheDocument();
+    });
+
+    it('should display verification timestamp', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockResolvedValue(mockValidAuditVerification);
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Verified at:/)).toBeInTheDocument();
+      });
+    });
+
+    it('should display error when verification API fails', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Network error'));
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Network error')).toBeInTheDocument();
+      });
+    });
+
+    it('should display legacy entries count when present', async () => {
+      const mockWithLegacy = {
+        ...mockValidAuditVerification,
+        stats: {
+          total: 220,
+          withHashChain: 8,
+          legacyEntries: 212,
+        },
+      };
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockResolvedValue(mockWithLegacy);
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Verify Chain' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Total Entries')).toBeInTheDocument();
+        expect(screen.getByText('With Hash Chain')).toBeInTheDocument();
+        expect(screen.getByText('Legacy (Pre-Hash)')).toBeInTheDocument();
+      });
+    });
+
+    it('should re-enable verify button after verification completes', async () => {
+      (api.adminVerifyAuditChain as ReturnType<typeof vi.fn>).mockResolvedValue(mockValidAuditVerification);
+
+      render(<ConsolePage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Verify Chain' })).toBeInTheDocument();
+      });
+
+      const verifyButton = screen.getByRole('button', { name: 'Verify Chain' });
+      fireEvent.click(verifyButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Chain Verified - No Tampering Detected')).toBeInTheDocument();
+      });
+
+      // Button should be re-enabled
+      expect(screen.getByRole('button', { name: 'Verify Chain' })).not.toBeDisabled();
     });
   });
 });

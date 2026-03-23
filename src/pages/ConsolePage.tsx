@@ -61,6 +61,30 @@ interface PauseState {
   pausedAt?: number;
 }
 
+interface AuditVerification {
+  verification: {
+    valid: boolean;
+    totalEntries: number;
+    invalidAt?: number;
+    error?: string;
+    verifiedAt: number;
+  };
+  stats: {
+    total: number;
+    withHashChain: number;
+    legacyEntries: number;
+  };
+  recentEntries: Array<{
+    id: string;
+    action: string;
+    entity_type: string;
+    entity_id: string;
+    prev_hash: string | null;
+    entry_hash: string;
+    created_at: number;
+  }>;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
@@ -380,6 +404,11 @@ export function ConsolePage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteReassignToId, setDeleteReassignToId] = useState('');
 
+  // Audit verification state
+  const [auditVerification, setAuditVerification] = useState<AuditVerification | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
   const fetchData = useCallback(async () => {
     try {
       setError(null);
@@ -452,6 +481,19 @@ export function ConsolePage() {
       setShowAgenciesModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch agencies');
+    }
+  };
+
+  const handleVerifyAudit = async () => {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const result = await api.adminVerifyAuditChain();
+      setAuditVerification(result);
+    } catch (err) {
+      setAuditError(err instanceof Error ? err.message : 'Failed to verify audit chain');
+    } finally {
+      setAuditLoading(false);
     }
   };
 
@@ -995,6 +1037,98 @@ export function ConsolePage() {
           </div>
         </Card>
       </div>
+
+      {/* Audit Integrity Verification */}
+      <Card
+        title="Audit Log Integrity (CJIS Compliance)"
+        className="mb-6"
+        headerAction={
+          <button
+            onClick={handleVerifyAudit}
+            disabled={auditLoading}
+            className="px-3 py-1 bg-teal-600 hover:bg-teal-500 disabled:bg-gray-600 rounded text-sm font-medium transition-colors"
+          >
+            {auditLoading ? 'Verifying...' : 'Verify Chain'}
+          </button>
+        }
+      >
+        {auditError && (
+          <div className="text-red-400 text-sm mb-3">{auditError}</div>
+        )}
+
+        {!auditVerification && !auditLoading && !auditError && (
+          <div className="text-gray-500 text-sm">
+            Click "Verify Chain" to validate audit log integrity. This checks that no audit records have been tampered with.
+          </div>
+        )}
+
+        {auditVerification && (
+          <div className="space-y-4">
+            {/* Verification Status */}
+            <div className="flex items-center gap-3">
+              <div className={`w-4 h-4 rounded-full ${auditVerification.verification.valid ? 'bg-green-500' : 'bg-red-500'}`} />
+              <span className={`font-medium ${auditVerification.verification.valid ? 'text-green-400' : 'text-red-400'}`}>
+                {auditVerification.verification.valid ? 'Chain Verified - No Tampering Detected' : 'Chain Invalid - Tampering Detected'}
+              </span>
+            </div>
+
+            {auditVerification.verification.error && (
+              <div className="bg-red-900/30 border border-red-700 rounded p-3 text-red-300 text-sm">
+                {auditVerification.verification.error}
+                {auditVerification.verification.invalidAt !== undefined && (
+                  <span> (at entry index {auditVerification.verification.invalidAt})</span>
+                )}
+              </div>
+            )}
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gray-700/50 rounded p-3 text-center">
+                <div className="text-2xl font-bold text-white">{auditVerification.stats.total}</div>
+                <div className="text-gray-400 text-xs">Total Entries</div>
+              </div>
+              <div className="bg-gray-700/50 rounded p-3 text-center">
+                <div className="text-2xl font-bold text-green-400">{auditVerification.stats.withHashChain}</div>
+                <div className="text-gray-400 text-xs">With Hash Chain</div>
+              </div>
+              <div className="bg-gray-700/50 rounded p-3 text-center">
+                <div className="text-2xl font-bold text-yellow-400">{auditVerification.stats.legacyEntries}</div>
+                <div className="text-gray-400 text-xs">Legacy (Pre-Hash)</div>
+              </div>
+            </div>
+
+            {/* Verification Timestamp */}
+            <div className="text-gray-500 text-xs">
+              Verified at: {new Date(auditVerification.verification.verifiedAt).toLocaleString()}
+            </div>
+
+            {/* Recent Hashed Entries */}
+            {auditVerification.recentEntries.length > 0 && (
+              <div>
+                <div className="text-gray-400 text-sm mb-2">Recent Hashed Entries:</div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {auditVerification.recentEntries.map((entry) => (
+                    <div key={entry.id} className="bg-gray-700/30 rounded p-2 text-xs font-mono">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-teal-400">{entry.action}</span>
+                        <span className="text-gray-500">{new Date(entry.created_at).toLocaleString()}</span>
+                      </div>
+                      <div className="text-gray-400 truncate" title={entry.entry_hash}>
+                        Hash: {entry.entry_hash.substring(0, 16)}...{entry.entry_hash.substring(entry.entry_hash.length - 8)}
+                      </div>
+                      {entry.prev_hash && (
+                        <div className="text-gray-500 truncate" title={entry.prev_hash}>
+                          Prev: {entry.prev_hash.substring(0, 16)}...
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
 
       {/* Footer */}
       <div className="text-center text-gray-500 text-sm">
