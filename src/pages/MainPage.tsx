@@ -142,12 +142,12 @@ export function MainPage() {
     }
   }, [activeTab, intakeSearchTerm, fetchIntakeRequests]);
 
-  // Poll intake queue every 30 seconds (always, for badge count)
+  // Poll intake queue every 30 seconds (for badge count)
+  // This effect only handles initial mount and polling - tab navigation is handled by debounced search
   useEffect(() => {
     const fetchLatest = async () => {
       try {
         const { requests: newRequests, total: newTotal } = await api.listIntakeRequests({
-          search: activeTab === 'intake' ? intakeSearchTerm || undefined : undefined,
           offset: 0,
           limit: 25,
         });
@@ -158,14 +158,14 @@ export function MainPage() {
       }
     };
 
-    // Fetch immediately on mount
+    // Fetch on mount for badge count
     fetchLatest();
 
-    // Then poll every 30 seconds
+    // Poll every 30 seconds
     const pollInterval = setInterval(fetchLatest, 30000);
 
     return () => clearInterval(pollInterval);
-  }, [activeTab, intakeSearchTerm]);
+  }, []); // No dependencies - only runs on mount
 
   // Debounced search for archived requests
   useEffect(() => {

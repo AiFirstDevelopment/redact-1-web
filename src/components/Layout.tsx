@@ -37,7 +37,7 @@ export function Layout({ children, activeTab, onTabChange, rightPanel, intakeCou
             )}
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-white">{user?.name}</span>
+            <span className="text-white">{user?.name || user?.email}</span>
             <button
               onClick={() => signOut()}
               className="text-white/80 hover:text-white text-sm"
