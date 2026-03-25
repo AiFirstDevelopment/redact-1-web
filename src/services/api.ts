@@ -506,8 +506,11 @@ class ApiService {
     return this.fetch(`/api/files/${fileId}/video/detections`, { method: 'DELETE' });
   }
 
-  async startVideoRedaction(fileId: string): Promise<{ job: VideoJob }> {
-    return this.fetch(`/api/files/${fileId}/video/redact`, { method: 'POST' });
+  async startVideoRedaction(fileId: string, redactionMethod?: 'blur' | 'pixelate' | 'black_box'): Promise<{ job: VideoJob }> {
+    return this.fetch(`/api/files/${fileId}/video/redact`, {
+      method: 'POST',
+      body: JSON.stringify({ redaction_method: redactionMethod || 'blur' }),
+    });
   }
 
   async getVideoStreamUrl(fileId: string): Promise<{ url: string }> {

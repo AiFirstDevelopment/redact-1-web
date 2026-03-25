@@ -32,6 +32,9 @@ export function VideoReviewPage() {
   const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
   const [showBulkRejectModal, setShowBulkRejectModal] = useState(false);
 
+  // Redaction method selection
+  const [redactionMethod, setRedactionMethod] = useState<'blur' | 'pixelate' | 'black_box'>('blur');
+
   // Track thumbnails - map of track_id to base64 image
   const [trackThumbnails, setTrackThumbnails] = useState<Map<string, string>>(new Map());
   const [isCapturingThumbnails, setIsCapturingThumbnails] = useState(false);
@@ -352,7 +355,7 @@ export function VideoReviewPage() {
     if (!fileId) return;
 
     try {
-      const { job: newJob } = await api.startVideoRedaction(fileId);
+      const { job: newJob } = await api.startVideoRedaction(fileId, redactionMethod);
       setJob(newJob);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start redaction');
@@ -629,12 +632,26 @@ export function VideoReviewPage() {
               )}
 
               {approvedCount > 0 && pendingCount === 0 && !job?.status?.includes('processing') && (
-                <button
-                  onClick={handleStartRedaction}
-                  className="w-full py-2 bg-purple-600 rounded hover:bg-purple-500"
-                >
-                  Generate Redacted Video
-                </button>
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-gray-400 text-sm mb-1">Redaction Style</label>
+                    <select
+                      value={redactionMethod}
+                      onChange={(e) => setRedactionMethod(e.target.value as 'blur' | 'pixelate' | 'black_box')}
+                      className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
+                    >
+                      <option value="blur">Blur (Gaussian)</option>
+                      <option value="pixelate">Pixelate</option>
+                      <option value="black_box">Black Box</option>
+                    </select>
+                  </div>
+                  <button
+                    onClick={handleStartRedaction}
+                    className="w-full py-2 bg-purple-600 rounded hover:bg-purple-500"
+                  >
+                    Generate Redacted Video
+                  </button>
+                </div>
               )}
             </div>
 
